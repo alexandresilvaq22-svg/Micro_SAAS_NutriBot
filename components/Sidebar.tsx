@@ -5,9 +5,10 @@ import { Edit2, Target, Scale, Ruler, LogOut } from 'lucide-react';
 interface SidebarProps {
   user: UserProfile;
   onEdit: () => void;
+  onLogout: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ user, onEdit }) => {
+const Sidebar: React.FC<SidebarProps> = ({ user, onEdit, onLogout }) => {
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 h-full flex flex-col">
       <div className="flex flex-col items-center text-center mb-8">
@@ -80,7 +81,10 @@ const Sidebar: React.FC<SidebarProps> = ({ user, onEdit }) => {
       </div>
 
       <div className="mt-auto pt-6 border-t border-slate-100">
-        <button className="flex items-center gap-2 text-slate-400 hover:text-red-500 text-sm font-medium transition-colors">
+        <button 
+            onClick={onLogout}
+            className="flex items-center gap-2 text-slate-400 hover:text-red-500 text-sm font-medium transition-colors w-full"
+        >
             <LogOut size={16} />
             Sair da Conta
         </button>

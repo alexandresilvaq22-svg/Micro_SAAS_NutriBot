@@ -6,12 +6,16 @@ import MealTable from './components/MealTable';
 import Leaderboard from './components/Leaderboard';
 import PricingTable from './components/PricingTable';
 import EditProfileModal from './components/EditProfileModal';
+import Login from './components/Login';
 import { CURRENT_USER, RECENT_MEALS, LEADERBOARD_DATA } from './constants';
 import { Flame, Beef, Wheat, Droplet } from 'lucide-react';
 import { UserProfile } from './types';
 
 const App: React.FC = () => {
-  // Convert constant to state to allow editing
+  // Auth State
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  
+  // User & Modal State
   const [user, setUser] = useState<UserProfile>(CURRENT_USER);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
@@ -34,6 +38,25 @@ const App: React.FC = () => {
     setUser(updatedUser);
   };
 
+  const handleLogin = (userData?: Partial<UserProfile>) => {
+    if (userData) {
+      setUser(prev => ({ ...prev, ...userData }));
+    }
+    setIsAuthenticated(true);
+  };
+
+  const handleLogout = () => {
+    setIsAuthenticated(false);
+    // Optionally reset user state here if needed, 
+    // but for this demo we keep the user constant data
+  };
+
+  // If not authenticated, show Login screen
+  if (!isAuthenticated) {
+    return <Login onLogin={handleLogin} />;
+  }
+
+  // If authenticated, show Dashboard
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
       <Header user={user} remainingCalories={remainingCalories} />
@@ -44,13 +67,13 @@ const App: React.FC = () => {
           {/* Left Column: Profile (Sticky on Desktop) */}
           <div className="lg:col-span-3 hidden lg:block">
             <div className="sticky top-24 h-[calc(100vh-8rem)]">
-              <Sidebar user={user} onEdit={() => setIsEditModalOpen(true)} />
+              <Sidebar user={user} onEdit={() => setIsEditModalOpen(true)} onLogout={handleLogout} />
             </div>
           </div>
 
           {/* Mobile Profile (Top) */}
           <div className="lg:hidden">
-              <Sidebar user={user} onEdit={() => setIsEditModalOpen(true)} />
+              <Sidebar user={user} onEdit={() => setIsEditModalOpen(true)} onLogout={handleLogout} />
           </div>
 
           {/* Main Content Area */}
