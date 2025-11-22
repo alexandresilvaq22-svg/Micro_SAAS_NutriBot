@@ -303,8 +303,8 @@ const DashboardContent: React.FC = () => {
         </div>
       </main>
 
-      {/* Chat Widget Component */}
-      <ChatWidget />
+      {/* Chat Widget Component passing User ID */}
+      <ChatWidget userId={currentUserId} />
 
       {/* Edit Profile Modal */}
       <EditProfileModal 

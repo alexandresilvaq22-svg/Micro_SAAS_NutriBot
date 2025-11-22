@@ -1,5 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Send, Bot, Sparkles } from 'lucide-react';
+import { X, Send, Bot, Sparkles, ExternalLink } from 'lucide-react';
+
+interface ChatWidgetProps {
+  userId: string | null;
+}
 
 interface Message {
   id: string;
@@ -8,7 +12,13 @@ interface Message {
   timestamp: Date;
 }
 
-const ChatWidget: React.FC = () => {
+// ⚠️ ATENÇÃO: Substitua esta URL pela URL do seu "Webhook Node" (Production URL) no n8n.
+// O método do Webhook no n8n deve ser POST.
+const N8N_WEBHOOK_URL = 'https://seu-n8n-instancia.com/webhook/SEU_IDENTIFICADOR'; 
+// Exemplo de URL do Telegram (substitua pelo link do seu bot)
+const TELEGRAM_BOT_URL = 'https://t.me/SeuNutriBot';
+
+const ChatWidget: React.FC<ChatWidgetProps> = ({ userId }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -30,51 +40,90 @@ const ChatWidget: React.FC = () => {
     scrollToBottom();
   }, [messages, isOpen, isTyping]);
 
-  const generateResponse = (text: string): string => {
+  // Fallback de respostas locais caso a URL do n8n não esteja configurada ou falhe
+  const generateLocalResponse = (text: string): string => {
     const lowerText = text.toLowerCase();
-    
     if (lowerText.includes('calorias') || lowerText.includes('meta')) {
-      return 'Com base nos seus dados, sua meta é de 2500 kcal. Você já consumiu cerca de 65% hoje. Quer uma sugestão de lanche leve?';
+      return 'Para uma análise precisa, estou conectando ao banco de dados. Por enquanto: mantenha o foco na meta de proteínas!';
     }
-    if (lowerText.includes('água') || lowerText.includes('agua') || lowerText.includes('sede')) {
-      return 'Hidratação é fundamental! Lembre-se de beber pelo menos 35ml por kg de peso corporal. Já bebeu seu copo agora?';
-    }
-    if (lowerText.includes('lanche') || lowerText.includes('fome') || lowerText.includes('comer')) {
-      return 'Que tal um iogurte grego com frutas (aprox. 180kcal) ou um ovo cozido (70kcal)? São ótimas fontes de proteína!';
-    }
-    if (lowerText.includes('obrigado') || lowerText.includes('valeu')) {
-      return 'Por nada! Estou aqui para te ajudar no seu shape. 💪';
-    }
-    return 'Entendi! Como sou uma IA em treinamento, posso te ajudar melhor se perguntar sobre: Metas, Calorias, Sugestões de refeição ou Hidratação.';
+    return 'Recebi sua mensagem! Para respostas mais complexas, certifique-se de conectar este chat ao n8n.';
   };
 
-  const handleSendMessage = (e?: React.FormEvent) => {
+  const handleSendMessage = async (e?: React.FormEvent) => {
     e?.preventDefault();
     
     if (!inputValue.trim()) return;
 
+    const textToSend = inputValue;
+    setInputValue(''); // Limpa input imediatamente
+
     const newUserMessage: Message = {
       id: Date.now().toString(),
-      text: inputValue,
+      text: textToSend,
       sender: 'user',
       timestamp: new Date()
     };
 
     setMessages(prev => [...prev, newUserMessage]);
-    setInputValue('');
     setIsTyping(true);
 
-    // Simula tempo de resposta da IA
-    setTimeout(() => {
-      const botResponse: Message = {
-        id: (Date.now() + 1).toString(),
-        text: generateResponse(newUserMessage.text),
-        sender: 'bot',
-        timestamp: new Date()
-      };
-      setMessages(prev => [...prev, botResponse]);
-      setIsTyping(false);
-    }, 1500);
+    try {
+        // Verifica se a URL foi configurada (remove o placeholder padrão se necessário)
+        const isN8nConfigured = N8N_WEBHOOK_URL && !N8N_WEBHOOK_URL.includes('seu-n8n-instancia');
+
+        if (isN8nConfigured) {
+            const response = await fetch(N8N_WEBHOOK_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    userId: userId,
+                    message: textToSend,
+                    // Você pode adicionar mais dados de contexto aqui se necessário
+                    source: 'dashboard_web' 
+                })
+            });
+
+            if (!response.ok) throw new Error('Falha na comunicação com n8n');
+
+            const data = await response.json();
+            
+            // O n8n deve retornar um JSON no formato: { "output": "Texto da resposta" }
+            const botText = data.output || data.text || data.message || "Desculpe, não entendi a resposta do servidor.";
+
+            const botResponse: Message = {
+                id: (Date.now() + 1).toString(),
+                text: botText,
+                sender: 'bot',
+                timestamp: new Date()
+            };
+            setMessages(prev => [...prev, botResponse]);
+        } else {
+            // Simulação local se n8n não estiver configurado
+            setTimeout(() => {
+                const botResponse: Message = {
+                    id: (Date.now() + 1).toString(),
+                    text: generateLocalResponse(textToSend),
+                    sender: 'bot',
+                    timestamp: new Date()
+                };
+                setMessages(prev => [...prev, botResponse]);
+            }, 1000);
+        }
+
+    } catch (error) {
+        console.error("Erro no chat:", error);
+        const errorResponse: Message = {
+            id: (Date.now() + 1).toString(),
+            text: "Desculpe, tive um problema ao conectar com o servidor. Tente novamente ou use o Telegram.",
+            sender: 'bot',
+            timestamp: new Date()
+        };
+        setMessages(prev => [...prev, errorResponse]);
+    } finally {
+        setIsTyping(false);
+    }
   };
 
   return (
@@ -94,9 +143,21 @@ const ChatWidget: React.FC = () => {
               </div>
               <div>
                 <h3 className="font-bold text-white text-sm"><span>NutriBot AI</span></h3>
-                <p className="text-emerald-400 text-xs flex items-center gap-1">
-                  <Sparkles size={10} /> <span>Online agora</span>
-                </p>
+                <div className="flex items-center gap-2">
+                    <p className="text-emerald-400 text-xs flex items-center gap-1">
+                        <Sparkles size={10} /> <span>Online agora</span>
+                    </p>
+                    {/* Link direto para o Telegram */}
+                    <a 
+                        href={TELEGRAM_BOT_URL} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-[10px] bg-slate-800 text-slate-300 px-2 py-0.5 rounded-full flex items-center gap-1 hover:bg-slate-700 hover:text-white transition-colors"
+                        title="Abrir no Telegram"
+                    >
+                        <span>Telegram</span> <ExternalLink size={8} />
+                    </a>
+                </div>
               </div>
             </div>
             <button 
