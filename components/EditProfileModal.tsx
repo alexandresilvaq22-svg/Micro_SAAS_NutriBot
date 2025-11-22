@@ -49,8 +49,10 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose, us
         
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 300; // Tamanho suficiente para avatar
-          const MAX_HEIGHT = 300;
+          // Compressão agressiva para salvar direto no banco (Base64)
+          // 150px é suficiente para um avatar e gera uma string muito menor
+          const MAX_WIDTH = 150; 
+          const MAX_HEIGHT = 150;
           let width = img.width;
           let height = img.height;
 
@@ -71,8 +73,8 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose, us
           const ctx = canvas.getContext('2d');
           ctx?.drawImage(img, 0, 0, width, height);
           
-          // Converte para JPEG com qualidade 0.7 para reduzir tamanho da string
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+          // Qualidade 0.5 (50%) para garantir que o payload seja pequeno (~5-10kb)
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.5);
           resolve(dataUrl);
         };
         
@@ -134,7 +136,7 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose, us
                 title="Clique para alterar a foto"
               >
                 <img 
-                  src={formData?.avatarUrl || "https://via.placeholder.com/200"} 
+                  src={formData?.avatarUrl || "https://via.placeholder.com/150"} 
                   alt="Preview" 
                   className={`w-24 h-24 rounded-full object-cover border-4 border-emerald-50 shadow-sm group-hover:border-emerald-200 transition-colors ${isProcessingImage ? 'opacity-50' : ''}`}
                 />

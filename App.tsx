@@ -349,33 +349,57 @@ const DashboardContent: React.FC = () => {
   const remainingCalories = Math.max(0, user.goalCalories - totals.calories);
 
   const handleSaveProfile = async (updatedUser: UserProfile) => {
-    // 1. Atualiza estado local instantaneamente para feedback rápido
+    // 1. Atualiza estado local instantaneamente
     setUser(updatedUser);
 
     if (!currentUserId) return;
 
     try {
-        console.log("Salvando perfil no banco...", updatedUser);
+        console.log("Tentando salvar perfil completo (incluindo imagem)...");
         
-        // 2. Envia UPDATE para o Supabase
+        // Objeto com todos os dados
+        const fullUpdateData = {
+            Nome: updatedUser.name,
+            Idade: updatedUser.age,
+            Peso_kg: updatedUser.weight,
+            Altura_cm: updatedUser.height,
+            Calorias_alvo: updatedUser.goalCalories,
+            "Proteína_alvo": updatedUser.goalProtein,
+            Avatar_URL: updatedUser.avatarUrl 
+        };
+
+        // 2. Tenta atualizar tudo
         const { error } = await supabase
             .from('NutriBot_User')
-            .update({
-                Nome: updatedUser.name,
-                Idade: updatedUser.age,
-                Peso_kg: updatedUser.weight,
-                Altura_cm: updatedUser.height,
-                Calorias_alvo: updatedUser.goalCalories,
-                "Proteína_alvo": updatedUser.goalProtein,
-                Avatar_URL: updatedUser.avatarUrl // Salva o Base64 ou Link no banco
-            })
+            .update(fullUpdateData)
             .eq('User_ID', currentUserId);
 
         if (error) {
-            console.error("Erro ao salvar perfil no Supabase:", error.message);
-            alert("Erro ao salvar alterações no banco de dados. Verifique sua conexão.");
+            console.warn("Erro ao salvar perfil completo. Tentando salvar sem a imagem...", error.message);
+            
+            // 3. Se falhar (provavelmente imagem muito grande), tenta salvar sem a imagem
+            const { error: retryError } = await supabase
+                .from('NutriBot_User')
+                .update({
+                    Nome: updatedUser.name,
+                    Idade: updatedUser.age,
+                    Peso_kg: updatedUser.weight,
+                    Altura_cm: updatedUser.height,
+                    Calorias_alvo: updatedUser.goalCalories,
+                    "Proteína_alvo": updatedUser.goalProtein,
+                    // Avatar_URL removido
+                })
+                .eq('User_ID', currentUserId);
+
+            if (retryError) {
+                console.error("Erro crítico: não foi possível salvar nem os dados de texto.", retryError.message);
+                alert("Erro ao salvar alterações. Verifique sua conexão.");
+            } else {
+                console.log("Perfil salvo com sucesso (sem a imagem).");
+                alert("Perfil atualizado! Porém, a foto era muito pesada e não pôde ser salva. Tente uma imagem menor.");
+            }
         } else {
-            console.log("Perfil atualizado com sucesso no banco!");
+            console.log("Perfil atualizado com sucesso!");
         }
 
     } catch (err) {
