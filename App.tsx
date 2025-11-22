@@ -24,6 +24,33 @@ const getValue = (obj: any, key: string) => {
   return foundKey ? obj[foundKey] : undefined;
 };
 
+// Helper para converter payload do banco em objeto MealLog da UI
+const convertToMealLog = (m: any): MealLog => {
+  const nomeDB = getValue(m, 'Nome');
+  const descDB = getValue(m, 'Descrição_da_refeição') || getValue(m, 'Descricao_da_refeicao'); 
+  
+  const nomeFinal = (nomeDB && nomeDB !== 'EMPTY') ? nomeDB : (descDB || 'Refeição Sem Nome');
+  
+  // Tenta extrair hora da data se possível, senão usa placeholder
+  const dataStr = getValue(m, 'Data') || '';
+  let timeStr = 'Recente';
+  if (dataStr.includes('T')) {
+      timeStr = dataStr.split('T')[1].substring(0, 5);
+  } else if (dataStr.includes(' ')) {
+      timeStr = dataStr.split(' ')[1].substring(0, 5);
+  }
+
+  return {
+    id: (getValue(m, 'id') || Math.random()).toString(),
+    time: timeStr, 
+    name: nomeFinal,
+    calories: Number(getValue(m, 'Calorias')) || 0,
+    protein: Number(getValue(m, 'Proteinas')) || 0,
+    carbs: Number(getValue(m, 'Carboidratos')) || 0,
+    fats: Number(getValue(m, 'Gorduras')) || 0
+  };
+};
+
 // Error Boundary Component to catch runtime errors
 class ErrorBoundary extends React.Component<any, { hasError: boolean, error: Error | null }> {
   constructor(props: any) {
@@ -84,7 +111,7 @@ const DashboardContent: React.FC = () => {
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
-  // Verifica o ID na URL ao carregar
+  // 1. Verifica o ID na URL ao carregar
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const urlIdStr = params.get('id')?.trim();
@@ -95,7 +122,6 @@ const DashboardContent: React.FC = () => {
     }
 
     // Tenta converter para número para compatibilidade com int8 do Supabase
-    // Se falhar (NaN), usa a string mesmo (caso o banco tenha mudado para uuid/text)
     let parsedId: string | number = parseInt(urlIdStr);
     if (isNaN(parsedId)) {
         parsedId = urlIdStr; 
@@ -106,6 +132,43 @@ const DashboardContent: React.FC = () => {
     fetchUserData(parsedId);
     fetchLeaderboard(parsedId);
   }, []);
+
+  // 2. Configura Realtime Subscription para NOVAS Refeições
+  useEffect(() => {
+    if (!currentUserId || accessStatus !== 'granted') return;
+
+    console.log("Configurando Realtime para refeições do usuário:", currentUserId);
+
+    // Cria o canal de subscription
+    const subscription = supabase
+      .channel('refeicoes-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'Refeições_NutriBot',
+          filter: `User_ID=eq.${currentUserId}`
+        },
+        (payload) => {
+          console.log('Nova refeição recebida em tempo real!', payload);
+          
+          // Converte o payload bruto em formato da UI
+          const newMeal = convertToMealLog(payload.new);
+          
+          // Adiciona ao topo da lista
+          setMeals(prevMeals => [newMeal, ...prevMeals]);
+          
+          // Opcional: Mostrar um toast ou som de notificação aqui
+        }
+      )
+      .subscribe();
+
+    // Limpeza ao desmontar
+    return () => {
+      supabase.removeChannel(subscription);
+    };
+  }, [currentUserId, accessStatus]);
 
   const fetchUserData = async (userId: string | number) => {
     try {
@@ -142,8 +205,8 @@ const DashboardContent: React.FC = () => {
         height: getValue(profileData, 'Altura_cm') || prev.height,
         goalCalories: getValue(profileData, 'Calorias_alvo') || prev.goalCalories,
         goalProtein: getValue(profileData, 'Proteína_alvo') || prev.goalProtein,
-        // Mantém avatar placeholder se não tiver url
-        avatarUrl: prev.avatarUrl 
+        // Pega a URL do avatar do banco se existir, senão usa placeholder
+        avatarUrl: getValue(profileData, 'Avatar_URL') || prev.avatarUrl 
       }));
 
       // 2. Buscar Refeições (Refeições_NutriBot)
@@ -162,16 +225,10 @@ const DashboardContent: React.FC = () => {
       let activeMeals: MealLog[] = [];
       
       if (mealsData && mealsData.length > 0) {
-        console.log(`Total de refeições encontradas: ${mealsData.length}`);
-        
-        // Log para debug dos campos da primeira refeição
-        console.log("Amostra da primeira refeição (raw):", mealsData[0]);
-
         // LÓGICA DE DATA INTELIGENTE:
         const todayStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
         
         // Pega a data mais recente disponível
-        // getValue garante que pegamos 'Data' ou 'data'
         const rawDate = getValue(mealsData[0], 'Data');
         const mostRecentMealDate = typeof rawDate === 'string' ? rawDate.trim().split(' ')[0] : todayStr;
         
@@ -186,34 +243,13 @@ const DashboardContent: React.FC = () => {
             setDisplayDate(targetDate);
         }
         
-        console.log(`Filtrando dados para a data alvo: ${targetDate}`);
-
         // Filtra apenas as refeições desse "Dia Ativo"
         const filteredDBMeals = mealsData.filter((m: any) => {
             const mDate = getValue(m, 'Data');
             return mDate && mDate.toString().startsWith(targetDate);
         });
 
-        console.log(`Refeições após filtro de data: ${filteredDBMeals.length}`);
-
-        activeMeals = filteredDBMeals.map((m: any) => {
-          // Extração defensiva de dados
-          const nomeDB = getValue(m, 'Nome');
-          const descDB = getValue(m, 'Descrição_da_refeição') || getValue(m, 'Descricao_da_refeicao'); 
-          
-          const nomeFinal = (nomeDB && nomeDB !== 'EMPTY') ? nomeDB : (descDB || 'Refeição Sem Nome');
-          
-          return {
-            id: (getValue(m, 'id') || Math.random()).toString(),
-            time: 'Refeição', // Fallback simples
-            name: nomeFinal,
-            // Converte para número e garante zero se falhar, usando getValue
-            calories: Number(getValue(m, 'Calorias')) || 0,
-            protein: Number(getValue(m, 'Proteinas')) || 0,
-            carbs: Number(getValue(m, 'Carboidratos')) || 0,
-            fats: Number(getValue(m, 'Gorduras')) || 0
-          };
-        });
+        activeMeals = filteredDBMeals.map((m: any) => convertToMealLog(m));
 
       } else {
         console.log("Nenhuma refeição encontrada no banco.");
@@ -239,8 +275,7 @@ const DashboardContent: React.FC = () => {
         
         if (usersError) throw usersError;
 
-        // 2. Pegar todas as refeições do dia (ou recente) para calcular score
-        // Para simplificar e não pesar, vamos pegar as refeições e agrupar no frontend
+        // 2. Pegar todas as refeições
         const { data: allMeals, error: mealsError } = await supabase
             .from('Refeições_NutriBot')
             .select('User_ID, Calorias, Data');
@@ -249,16 +284,14 @@ const DashboardContent: React.FC = () => {
 
         if (!allUsers || !allMeals) return;
 
-        // Agrupar calorias por usuário (Considerando a data mais recente globalmente ou hoje)
-        // Por simplicidade, vamos somar tudo que bater com a data de hoje.
+        // Agrupar calorias por usuário
         const todayStr = new Date().toISOString().split('T')[0];
         
         const userScores: Record<string, number> = {};
 
         allMeals.forEach((meal: any) => {
             const mDate = getValue(meal, 'Data');
-            // Lógica simplificada: soma se for a data de hoje. 
-            // Em produção ideal, usaria a mesma lógica de "dia ativo" de cada um.
+            // Logica: soma se for a data de hoje para ranking diário
             if (mDate && mDate.toString().startsWith(todayStr)) {
                 const uid = getValue(meal, 'User_ID');
                 const cals = Number(getValue(meal, 'Calorias')) || 0;
@@ -276,9 +309,9 @@ const DashboardContent: React.FC = () => {
             const score = Math.min(100, Math.round((current / goal) * 100));
 
             return {
-                rank: 0, // Será calculado após sort
+                rank: 0, 
                 name: name,
-                score: score, // Porcentagem
+                score: score, 
                 isUser: uid.toString() === currentUserId.toString(),
                 avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`
             };
@@ -315,12 +348,42 @@ const DashboardContent: React.FC = () => {
 
   const remainingCalories = Math.max(0, user.goalCalories - totals.calories);
 
-  const handleSaveProfile = (updatedUser: UserProfile) => {
+  const handleSaveProfile = async (updatedUser: UserProfile) => {
+    // 1. Atualiza estado local instantaneamente para feedback rápido
     setUser(updatedUser);
+
+    if (!currentUserId) return;
+
+    try {
+        console.log("Salvando perfil no banco...", updatedUser);
+        
+        // 2. Envia UPDATE para o Supabase
+        const { error } = await supabase
+            .from('NutriBot_User')
+            .update({
+                Nome: updatedUser.name,
+                Idade: updatedUser.age,
+                Peso_kg: updatedUser.weight,
+                Altura_cm: updatedUser.height,
+                Calorias_alvo: updatedUser.goalCalories,
+                "Proteína_alvo": updatedUser.goalProtein,
+                Avatar_URL: updatedUser.avatarUrl // Salva o Base64 ou Link no banco
+            })
+            .eq('User_ID', currentUserId);
+
+        if (error) {
+            console.error("Erro ao salvar perfil no Supabase:", error.message);
+            alert("Erro ao salvar alterações no banco de dados. Verifique sua conexão.");
+        } else {
+            console.log("Perfil atualizado com sucesso no banco!");
+        }
+
+    } catch (err) {
+        console.error("Erro inesperado ao salvar perfil:", err);
+    }
   };
 
-  // TELAS DE ESTADO (Loading, Sem ID, Negado)
-  
+  // TELAS DE ESTADO
   if (accessStatus === 'loading') {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 gap-4">
@@ -372,7 +435,7 @@ const DashboardContent: React.FC = () => {
     );
   }
 
-  // DASHBOARD PRINCIPAL (Acesso Concedido)
+  // DASHBOARD PRINCIPAL
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
       <Header user={user} remainingCalories={remainingCalories} />
@@ -380,14 +443,14 @@ const DashboardContent: React.FC = () => {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           
-          {/* Left Column: Profile (Sticky on Desktop) */}
+          {/* Left Column: Profile */}
           <div className="lg:col-span-3 hidden lg:block">
             <div className="sticky top-24 h-[calc(100vh-8rem)]">
               <Sidebar user={user} onEdit={() => setIsEditModalOpen(true)} />
             </div>
           </div>
 
-          {/* Mobile Profile (Top) */}
+          {/* Mobile Profile */}
           <div className="lg:hidden">
               <Sidebar user={user} onEdit={() => setIsEditModalOpen(true)} />
           </div>
@@ -395,9 +458,8 @@ const DashboardContent: React.FC = () => {
           {/* Main Content Area */}
           <div className="lg:col-span-9 space-y-12">
             
-            {/* Grouped Dashboard Components */}
             <div className="space-y-6">
-                {/* Section 1: Daily Goals (4 Cards) */}
+                {/* Section 1: Daily Goals */}
                 <section>
                 <div className="flex justify-between items-end mb-4">
                     <h2 className="text-xl font-bold text-slate-800">Metas Diárias</h2>
@@ -413,7 +475,7 @@ const DashboardContent: React.FC = () => {
                         current: totals.calories,
                         target: user.goalCalories,
                         unit: 'kcal',
-                        color: '#10b981', // emerald-500
+                        color: '#10b981', 
                     }}
                     icon={<Flame size={20} className="text-emerald-500" />}
                     />
@@ -423,7 +485,7 @@ const DashboardContent: React.FC = () => {
                         current: totals.protein,
                         target: user.goalProtein,
                         unit: 'g',
-                        color: '#84cc16', // lime-500
+                        color: '#84cc16', 
                     }}
                     icon={<Beef size={20} className="text-lime-600" />}
                     />
@@ -431,9 +493,9 @@ const DashboardContent: React.FC = () => {
                     data={{
                         name: 'Carboidratos',
                         current: totals.carbs,
-                        target: 300, // Default fallback se não tiver meta
+                        target: 300, 
                         unit: 'g',
-                        color: '#f59e0b', // amber-500
+                        color: '#f59e0b', 
                     }}
                     icon={<Wheat size={20} className="text-amber-500" />}
                     />
@@ -441,24 +503,22 @@ const DashboardContent: React.FC = () => {
                     data={{
                         name: 'Gorduras',
                         current: totals.fats,
-                        target: 70, // Default fallback se não tiver meta
+                        target: 70, 
                         unit: 'g',
-                        color: '#f43f5e', // rose-500
+                        color: '#f43f5e', 
                     }}
                     icon={<Droplet size={20} className="text-rose-500" />}
                     />
                 </div>
                 </section>
 
-                {/* Section 2: Meal Log & Leaderboard Split */}
+                {/* Section 2: Meal Log & Leaderboard */}
                 <section className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                 
-                {/* Meal Logs (Takes up 2 columns on wide screens) */}
                 <div className="xl:col-span-2 h-full">
                     <MealTable meals={meals} />
                 </div>
 
-                {/* Leaderboard (Takes up 1 column on wide screens) */}
                 <div className="xl:col-span-1 h-full">
                     <Leaderboard entries={leaderboard} />
                 </div>
@@ -474,10 +534,8 @@ const DashboardContent: React.FC = () => {
         </div>
       </main>
 
-      {/* Chat Widget Component passing User ID */}
       <ChatWidget userId={currentUserId} />
 
-      {/* Edit Profile Modal */}
       <EditProfileModal 
         isOpen={isEditModalOpen} 
         onClose={() => setIsEditModalOpen(false)} 

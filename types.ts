@@ -60,6 +60,7 @@ export interface NutriBotUserDB {
   Alergias: string;
   Data_registro: string;
   behavior_flags: string;
+  Avatar_URL?: string; // Novo campo para persistir foto (Base64 ou Link)
 }
 
 export interface RefeicaoDB {
