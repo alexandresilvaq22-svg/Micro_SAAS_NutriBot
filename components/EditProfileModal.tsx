@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Save, Camera } from 'lucide-react';
+import { X, Save, Camera, Loader2 } from 'lucide-react';
 import { UserProfile } from '../types';
 
 interface EditProfileModalProps {
@@ -11,6 +11,7 @@ interface EditProfileModalProps {
 
 const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose, user, onSave }) => {
   const [formData, setFormData] = useState<UserProfile>(user);
+  const [isProcessingImage, setIsProcessingImage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Reset form data when user prop changes or modal opens
@@ -31,20 +32,75 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose, us
   };
 
   const handleImageClick = () => {
-    fileInputRef.current?.click();
+    if (!isProcessingImage) {
+        fileInputRef.current?.click();
+    }
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Função para redimensionar e comprimir a imagem
+  const resizeImage = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 300; // Tamanho suficiente para avatar
+          const MAX_HEIGHT = 300;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, width, height);
+          
+          // Converte para JPEG com qualidade 0.7 para reduzir tamanho da string
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+          resolve(dataUrl);
+        };
+        
+        img.onerror = (err) => reject(err);
+      };
+      
+      reader.onerror = (err) => reject(err);
+    });
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
+      try {
+        setIsProcessingImage(true);
+        // Comprime a imagem antes de salvar no estado
+        const compressedBase64 = await resizeImage(file);
+        
         setFormData(prev => ({
           ...prev,
-          avatarUrl: reader.result as string
+          avatarUrl: compressedBase64
         }));
-      };
-      reader.readAsDataURL(file);
+      } catch (error) {
+        console.error("Erro ao processar imagem:", error);
+        alert("Erro ao processar a imagem. Tente um arquivo menor.");
+      } finally {
+        setIsProcessingImage(false);
+      }
     }
   };
 
@@ -80,14 +136,21 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose, us
                 <img 
                   src={formData?.avatarUrl || "https://via.placeholder.com/200"} 
                   alt="Preview" 
-                  className="w-24 h-24 rounded-full object-cover border-4 border-emerald-50 shadow-sm group-hover:border-emerald-200 transition-colors"
+                  className={`w-24 h-24 rounded-full object-cover border-4 border-emerald-50 shadow-sm group-hover:border-emerald-200 transition-colors ${isProcessingImage ? 'opacity-50' : ''}`}
                 />
-                {/* Hover Overlay */}
+                
+                {/* Loading or Camera Icon */}
                 <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                  <Camera className="text-white" size={24} />
+                  {isProcessingImage ? (
+                    <Loader2 className="text-white animate-spin" size={24} />
+                  ) : (
+                    <Camera className="text-white" size={24} />
+                  )}
                 </div>
               </div>
-              <span className="text-xs text-slate-400 font-medium">Clique na foto para alterar</span>
+              <span className="text-xs text-slate-400 font-medium">
+                {isProcessingImage ? "Processando..." : "Clique na foto para alterar"}
+              </span>
               
               {/* Hidden File Input */}
               <input 
@@ -189,10 +252,11 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose, us
           <button 
             type="submit"
             form="profile-form"
-            className="flex items-center gap-2 px-6 py-2 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-md shadow-emerald-200 transition-all transform hover:translate-y-px"
+            disabled={isProcessingImage}
+            className={`flex items-center gap-2 px-6 py-2 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-md shadow-emerald-200 transition-all transform hover:translate-y-px ${isProcessingImage ? 'opacity-70 cursor-not-allowed' : ''}`}
           >
-            <Save size={16} />
-            Salvar Alterações
+            {isProcessingImage ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+            {isProcessingImage ? 'Processando...' : 'Salvar Alterações'}
           </button>
         </div>
       </div>
