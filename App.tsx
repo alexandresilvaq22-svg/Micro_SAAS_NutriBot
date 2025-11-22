@@ -6,6 +6,7 @@ import MealTable from './components/MealTable';
 import Leaderboard from './components/Leaderboard';
 import PricingTable from './components/PricingTable';
 import EditProfileModal from './components/EditProfileModal';
+import ChatWidget from './components/ChatWidget';
 import Login from './components/Login';
 import { CURRENT_USER, RECENT_MEALS, LEADERBOARD_DATA } from './constants';
 import { Flame, Beef, Wheat, Droplet } from 'lucide-react';
@@ -195,13 +196,8 @@ const DashboardContent: React.FC = () => {
         </div>
       </main>
 
-      {/* Floating Chat Button (Hint at Agent Functionality) */}
-      <div className="fixed bottom-6 right-6 z-40">
-        <button className="bg-slate-900 hover:bg-slate-800 text-white p-4 rounded-full shadow-xl flex items-center gap-3 transition-all hover:scale-105">
-            <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
-            <span className="font-semibold pr-2">Falar com NutriBot</span>
-        </button>
-      </div>
+      {/* Chat Widget Component */}
+      <ChatWidget />
 
       {/* Edit Profile Modal */}
       <EditProfileModal 
