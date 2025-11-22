@@ -53,7 +53,21 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
     try {
       if (isRegistering) {
-        // Registro na tabela Login_User_NutriBot
+        // 1. Verificar se o usuário já existe antes de cadastrar
+        const { data: existingUser, error: checkError } = await supabase
+          .from('Login_User_NutriBot')
+          .select('email')
+          .eq('email', email);
+
+        if (checkError) throw checkError;
+
+        if (existingUser && existingUser.length > 0) {
+          setError('Este e-mail já está cadastrado. Por favor, faça login.');
+          setIsLoading(false);
+          return;
+        }
+
+        // 2. Registro na tabela Login_User_NutriBot
         const { data, error: insertError } = await supabase
           .from('Login_User_NutriBot')
           .insert([
@@ -61,38 +75,52 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
               email: email, 
               senha: password,
               data_cadastro: new Date().toISOString(),
-              // Aqui assumimos que o ID é gerado automaticamente ou podemos passar um user_id
-              // Se o banco espera um user_id (link com telegram), talvez precisemos gerar um temporário
             }
           ])
           .select();
 
         if (insertError) throw insertError;
 
-        // Sucesso no registro
-        // Usaremos o ID do registro de login ou o email como identificador provisório
         const newUser = data && data[0];
         onLogin({ 
           name: name,
-          userId: newUser ? newUser.id.toString() : undefined // Passamos o ID para buscar o perfil depois
+          userId: newUser ? newUser.id.toString() : undefined
         });
 
       } else {
-        // Login: Consulta na tabela Login_User_NutriBot
-        const { data, error: fetchError } = await supabase
+        // LOGICA DE LOGIN DETALHADA
+
+        // 1. Buscar usuário pelo Email
+        const { data: users, error: fetchError } = await supabase
           .from('Login_User_NutriBot')
           .select('*')
-          .eq('email', email)
-          .eq('senha', password) // Nota: Em produção, senhas devem ser hash, não texto puro
-          .single();
+          .eq('email', email);
 
-        if (fetchError || !data) {
-          throw new Error('Email ou senha incorretos.');
+        if (fetchError) {
+          throw new Error('Erro ao buscar usuário.');
+        }
+
+        // 2. Verificar se o usuário existe
+        if (!users || users.length === 0) {
+          setError('E-mail não encontrado. Crie uma conta grátis para começar!');
+          setIsLoading(false);
+          return;
+        }
+
+        const user = users[0];
+
+        // 3. Verificar a senha
+        // Nota: Idealmente senhas devem ser comparadas usando hash no backend, 
+        // mas seguindo a estrutura atual de comparação direta:
+        if (user.senha !== password) {
+          setError('Senha incorreta. Tente novamente.');
+          setIsLoading(false);
+          return;
         }
 
         // Sucesso no Login
         onLogin({
-             userId: data.id.toString() // Usaremos este ID para tentar achar o perfil NutriBot_User
+             userId: user.id.toString()
         });
       }
     } catch (err: any) {
@@ -126,7 +154,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
           {/* Logo Section */}
           <div className="flex flex-col items-center text-center mb-8">
              <div className="w-16 h-16 bg-gradient-to-br from-emerald-400 to-lime-400 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-100 mb-4">
-                <span className="text-white font-bold text-3xl">N</span>
+                <span className="text-white font-bold text-3xl"><span>N</span></span>
              </div>
             <h1 className="text-2xl font-bold text-slate-800">
               <span>{isRegistering ? 'Crie sua conta' : 'Bem-vindo de volta!'}</span>
@@ -145,7 +173,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             {/* Name Input (Register Only) */}
             {isRegistering && (
               <div className="space-y-1.5 animate-fade-in-down">
-                <label className="text-xs font-bold text-slate-600 uppercase ml-1">Nome Completo</label>
+                <label className="text-xs font-bold text-slate-600 uppercase ml-1"><span>Nome Completo</span></label>
                 <div className="relative group">
                   <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors">
                     <User size={20} />
@@ -163,7 +191,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
             {/* Email Input */}
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-slate-600 uppercase ml-1">E-mail</label>
+              <label className="text-xs font-bold text-slate-600 uppercase ml-1"><span>E-mail</span></label>
               <div className="relative group">
                 <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors">
                   <Mail size={20} />
@@ -181,7 +209,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             {/* Password Input */}
             <div className="space-y-1.5">
               <div className="flex justify-between items-center ml-1">
-                <label className="text-xs font-bold text-slate-600 uppercase">Senha</label>
+                <label className="text-xs font-bold text-slate-600 uppercase"><span>Senha</span></label>
                 {!isRegistering && (
                   <a href="#" className="text-xs font-medium text-emerald-600 hover:text-emerald-700 transition-colors">
                     <span>Esqueceu a senha?</span>
