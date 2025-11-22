@@ -47,7 +47,7 @@ export interface LoginUserDB {
 }
 
 export interface NutriBotUserDB {
-  User_ID: string | number; // ID do Telegram ou ID gerado (pode vir como int8 do banco)
+  User_ID: string | number; // Permite ambos para flexibilidade no frontend
   Nome: string;
   Peso_kg: number;
   Altura_cm: number;

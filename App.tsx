@@ -65,43 +65,54 @@ const DashboardContent: React.FC = () => {
   // User & Data State
   const [user, setUser] = useState<UserProfile>(CURRENT_USER);
   const [meals, setMeals] = useState<MealLog[]>([]);
+  
+  // Data de referência para exibição (pode ser hoje ou a data da última refeição)
+  const [displayDate, setDisplayDate] = useState<string>(new Date().toLocaleDateString());
+
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   // Verifica o ID na URL ao carregar
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    // Trim remove espaços em branco acidentais que podem quebrar a query
-    const urlId = params.get('id')?.trim();
+    const urlIdStr = params.get('id')?.trim();
 
-    if (!urlId) {
+    if (!urlIdStr) {
       setAccessStatus('no_id');
       return;
     }
 
-    console.log("Tentando acessar com ID:", urlId);
-    setCurrentUserId(urlId);
-    fetchUserData(urlId);
+    // Tenta converter para número para compatibilidade com int8 do Supabase
+    // Se falhar (NaN), usa a string mesmo (caso o banco tenha mudado para uuid/text)
+    let parsedId: string | number = parseInt(urlIdStr);
+    if (isNaN(parsedId)) {
+        parsedId = urlIdStr; 
+    }
+
+    console.log("Tentando acessar com ID:", parsedId, "(Tipo:", typeof parsedId, ")");
+    setCurrentUserId(parsedId.toString());
+    fetchUserData(parsedId);
   }, []);
 
-  const fetchUserData = async (userId: string) => {
+  const fetchUserData = async (userId: string | number) => {
     try {
       setAccessStatus('loading');
 
       console.log(`Buscando perfil para User_ID: ${userId}...`);
 
       // 1. Buscar Perfil no Supabase (NutriBot_User)
+      // .maybeSingle() evita erro JSON object requested, multiple (or no) rows returned
       const { data: profileData, error: profileError } = await supabase
         .from('NutriBot_User')
         .select('*')
         .eq('User_ID', userId)
-        .single();
+        .maybeSingle();
 
       if (profileError) {
-        console.error("Erro Supabase (Perfil):", profileError);
+        console.error("Erro Supabase (Perfil):", profileError.message);
       }
       
       if (!profileData) {
-        console.warn("Perfil não encontrado no banco de dados.");
+        console.warn("Perfil não encontrado. Verifique RLS ou ID incorreto.");
         setAccessStatus('denied');
         return;
       }
@@ -118,37 +129,64 @@ const DashboardContent: React.FC = () => {
         height: profileData.Altura_cm || prev.height,
         goalCalories: profileData.Calorias_alvo || prev.goalCalories,
         goalProtein: profileData['Proteína_alvo'] || prev.goalProtein,
+        // Mantém avatar placeholder se não tiver url
+        avatarUrl: prev.avatarUrl 
       }));
 
       // 2. Buscar Refeições (Refeições_NutriBot)
+      // Buscamos as últimas 50 para garantir que pegamos o dia correto
       console.log("Buscando refeições...");
       const { data: mealsData, error: mealsError } = await supabase
         .from('Refeições_NutriBot')
         .select('*')
         .eq('User_ID', userId)
-        .order('Data', { ascending: false })
-        .limit(10);
+        .order('Data', { ascending: false }) // Mais recentes primeiro
+        .limit(50);
 
       if (mealsError) {
-        console.error("Erro Supabase (Refeições):", mealsError);
+        console.error("Erro Supabase (Refeições):", mealsError.message);
       }
 
-      if (mealsData) {
-        console.log(`Encontradas ${mealsData.length} refeições.`);
-        const formattedMeals: MealLog[] = mealsData.map((m: RefeicaoDB) => ({
+      let activeMeals: MealLog[] = [];
+      
+      if (mealsData && mealsData.length > 0) {
+        console.log(`Total de refeições encontradas: ${mealsData.length}`);
+
+        // LÓGICA DE DATA INTELIGENTE:
+        // 1. Verifica se tem refeição hoje (Data local)
+        // 2. Se não, pega a data da refeição mais recente encontrada no banco
+        
+        const todayStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+        const mostRecentMealDate = mealsData[0].Data; // Já ordenado desc
+        
+        // Se a refeição mais recente não é hoje, assumimos que o usuário quer ver o último dia registrado
+        // Isso corrige o problema de "Dados Zerados" se os dados forem de 2025 ou do passado
+        const targetDate = mostRecentMealDate === todayStr ? todayStr : mostRecentMealDate;
+        
+        setDisplayDate(new Date(targetDate).toLocaleDateString('pt-BR'));
+        console.log(`Exibindo dados para a data: ${targetDate}`);
+
+        // Filtra apenas as refeições desse "Dia Ativo"
+        const filteredDBMeals = mealsData.filter((m: RefeicaoDB) => m.Data === targetDate);
+
+        activeMeals = filteredDBMeals.map((m: RefeicaoDB) => ({
           id: m.id.toString(),
-          time: new Date(m.Data).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          name: m.Nome || m['Descrição_da_refeição'],
-          calories: m.Calorias,
-          protein: m.Proteinas,
-          carbs: m.Carboidratos,
-          fats: m.Gorduras
+          // Tenta criar hora bonita, fallback para string vazia
+          time: new Date(`${m.Data}T12:00:00`).toLocaleDateString('pt-BR') === 'Invalid Date' 
+                ? '00:00' 
+                : 'Refeição', // Se não tiver coluna hora, deixa genérico ou extrai de created_at se houver
+          name: m.Nome && m.Nome !== 'EMPTY' ? m.Nome : (m['Descrição_da_refeição'] || 'Refeição Sem Nome'),
+          calories: Number(m.Calorias) || 0,
+          protein: Number(m.Proteinas) || 0,
+          carbs: Number(m.Carboidratos) || 0,
+          fats: Number(m.Gorduras) || 0
         }));
-        setMeals(formattedMeals);
+
       } else {
-        setMeals([]); // Sem refeições ainda
+        console.log("Nenhuma refeição encontrada.");
       }
 
+      setMeals(activeMeals);
       setAccessStatus('granted');
 
     } catch (error) {
@@ -157,7 +195,7 @@ const DashboardContent: React.FC = () => {
     }
   };
 
-  // Calculate total consumed macros based on REAL data
+  // Calculate total consumed macros based on ACTIVE meals
   const totals = useMemo(() => {
     return meals.reduce(
       (acc, meal) => ({
@@ -213,7 +251,12 @@ const DashboardContent: React.FC = () => {
         <p className="text-slate-500 max-w-md leading-relaxed mb-6">
           Não conseguimos encontrar seus dados com o ID fornecido (<strong>{currentUserId}</strong>).
           <br/><br/>
-          Verifique se o ID está correto ou se as permissões (RLS) no Supabase foram liberadas.
+          <strong>Possíveis causas:</strong>
+          <ul className="list-disc text-left mt-2 ml-4 text-sm">
+             <li>O ID do Telegram mudou ou está incorreto.</li>
+             <li>Você ainda não completou o cadastro inicial no bot.</li>
+             <li>O banco de dados (Supabase) bloqueou o acesso (RLS).</li>
+          </ul>
         </p>
         <button 
             onClick={() => window.location.reload()}
@@ -252,7 +295,13 @@ const DashboardContent: React.FC = () => {
             <div className="space-y-6">
                 {/* Section 1: Daily Goals (4 Cards) */}
                 <section>
-                <h2 className="text-xl font-bold text-slate-800 mb-4">Metas Diárias</h2>
+                <div className="flex justify-between items-end mb-4">
+                    <h2 className="text-xl font-bold text-slate-800">Metas Diárias</h2>
+                    <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-100">
+                        Visualizando: {displayDate}
+                    </span>
+                </div>
+                
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
                     <MacroCard
                     data={{
@@ -278,7 +327,7 @@ const DashboardContent: React.FC = () => {
                     data={{
                         name: 'Carboidratos',
                         current: totals.carbs,
-                        target: 300, // Default fallback
+                        target: 300, // Default fallback se não tiver meta
                         unit: 'g',
                         color: '#f59e0b', // amber-500
                     }}
@@ -288,7 +337,7 @@ const DashboardContent: React.FC = () => {
                     data={{
                         name: 'Gorduras',
                         current: totals.fats,
-                        target: 70, // Default fallback
+                        target: 70, // Default fallback se não tiver meta
                         unit: 'g',
                         color: '#f43f5e', // rose-500
                     }}
