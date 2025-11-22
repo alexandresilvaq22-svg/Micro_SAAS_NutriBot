@@ -1,3 +1,4 @@
+
 export interface UserProfile {
   id: string;
   name: string;
@@ -46,7 +47,7 @@ export interface LoginUserDB {
 }
 
 export interface NutriBotUserDB {
-  User_ID: string; // ID do Telegram ou ID gerado
+  User_ID: string | number; // ID do Telegram ou ID gerado (pode vir como int8 do banco)
   Nome: string;
   Peso_kg: number;
   Altura_cm: number;
@@ -62,7 +63,7 @@ export interface NutriBotUserDB {
 
 export interface RefeicaoDB {
   id: number;
-  User_ID: string;
+  User_ID: string | number;
   Data: string;
   Nome: string;
   "Descrição_da_refeição": string;

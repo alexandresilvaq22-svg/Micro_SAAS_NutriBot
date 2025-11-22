@@ -15,7 +15,9 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose, us
 
   // Reset form data when user prop changes or modal opens
   useEffect(() => {
-    setFormData(user);
+    if (user) {
+      setFormData(user);
+    }
   }, [user, isOpen]);
 
   if (!isOpen) return null;
@@ -76,7 +78,7 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose, us
                 title="Clique para alterar a foto"
               >
                 <img 
-                  src={formData.avatarUrl} 
+                  src={formData?.avatarUrl || "https://via.placeholder.com/200"} 
                   alt="Preview" 
                   className="w-24 h-24 rounded-full object-cover border-4 border-emerald-50 shadow-sm group-hover:border-emerald-200 transition-colors"
                 />
@@ -105,9 +107,9 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose, us
                   type="text" 
                   name="name"
                   required
-                  value={formData.name}
+                  value={formData?.name || ''}
                   onChange={handleChange}
-                  className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+                  className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:border-emerald-500 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
                 />
               </div>
 
@@ -116,7 +118,7 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose, us
                 <input 
                   type="number" 
                   name="age"
-                  value={formData.age}
+                  value={formData?.age || ''}
                   onChange={handleChange}
                   className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
                 />
@@ -128,7 +130,7 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose, us
                   type="number" 
                   name="weight"
                   step="0.1"
-                  value={formData.weight}
+                  value={formData?.weight || ''}
                   onChange={handleChange}
                   className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
                 />
@@ -139,7 +141,7 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose, us
                 <input 
                   type="number" 
                   name="height"
-                  value={formData.height}
+                  value={formData?.height || ''}
                   onChange={handleChange}
                   className="w-full p-2 border border-slate-200 rounded-lg text-sm bg-white text-slate-900 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
                 />
@@ -155,7 +157,7 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose, us
                   <input 
                     type="number" 
                     name="goalCalories"
-                    value={formData.goalCalories}
+                    value={formData?.goalCalories || ''}
                     onChange={handleChange}
                     className="w-full p-2 border border-emerald-200 bg-emerald-50/30 text-slate-900 rounded-lg text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
                   />
@@ -165,7 +167,7 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({ isOpen, onClose, us
                   <input 
                     type="number" 
                     name="goalProtein"
-                    value={formData.goalProtein}
+                    value={formData?.goalProtein || ''}
                     onChange={handleChange}
                     className="w-full p-2 border border-lime-200 bg-lime-50/30 text-slate-900 rounded-lg text-sm focus:outline-none focus:border-lime-500 focus:ring-1 focus:ring-lime-500"
                   />

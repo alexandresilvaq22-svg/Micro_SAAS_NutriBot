@@ -70,13 +70,15 @@ const DashboardContent: React.FC = () => {
   // Verifica o ID na URL ao carregar
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const urlId = params.get('id');
+    // Trim remove espaços em branco acidentais que podem quebrar a query
+    const urlId = params.get('id')?.trim();
 
     if (!urlId) {
       setAccessStatus('no_id');
       return;
     }
 
+    console.log("Tentando acessar com ID:", urlId);
     setCurrentUserId(urlId);
     fetchUserData(urlId);
   }, []);
@@ -85,6 +87,8 @@ const DashboardContent: React.FC = () => {
     try {
       setAccessStatus('loading');
 
+      console.log(`Buscando perfil para User_ID: ${userId}...`);
+
       // 1. Buscar Perfil no Supabase (NutriBot_User)
       const { data: profileData, error: profileError } = await supabase
         .from('NutriBot_User')
@@ -92,16 +96,22 @@ const DashboardContent: React.FC = () => {
         .eq('User_ID', userId)
         .single();
 
-      if (profileError || !profileData) {
-        console.error("Erro ao buscar perfil:", profileError);
+      if (profileError) {
+        console.error("Erro Supabase (Perfil):", profileError);
+      }
+      
+      if (!profileData) {
+        console.warn("Perfil não encontrado no banco de dados.");
         setAccessStatus('denied');
         return;
       }
 
+      console.log("Perfil encontrado:", profileData);
+
       // Atualiza estado do usuário com dados do banco
       setUser(prev => ({
         ...prev,
-        id: profileData.User_ID,
+        id: profileData.User_ID?.toString(),
         name: profileData.Nome || prev.name,
         age: profileData.Idade || prev.age,
         weight: profileData.Peso_kg || prev.weight,
@@ -111,14 +121,20 @@ const DashboardContent: React.FC = () => {
       }));
 
       // 2. Buscar Refeições (Refeições_NutriBot)
-      const { data: mealsData } = await supabase
+      console.log("Buscando refeições...");
+      const { data: mealsData, error: mealsError } = await supabase
         .from('Refeições_NutriBot')
         .select('*')
         .eq('User_ID', userId)
         .order('Data', { ascending: false })
         .limit(10);
 
+      if (mealsError) {
+        console.error("Erro Supabase (Refeições):", mealsError);
+      }
+
       if (mealsData) {
+        console.log(`Encontradas ${mealsData.length} refeições.`);
         const formattedMeals: MealLog[] = mealsData.map((m: RefeicaoDB) => ({
           id: m.id.toString(),
           time: new Date(m.Data).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -136,7 +152,7 @@ const DashboardContent: React.FC = () => {
       setAccessStatus('granted');
 
     } catch (error) {
-      console.error("Erro geral:", error);
+      console.error("Erro CRÍTICO no fetchUserData:", error);
       setAccessStatus('denied');
     }
   };
@@ -195,7 +211,9 @@ const DashboardContent: React.FC = () => {
         </div>
         <h1 className="text-3xl font-bold text-slate-800 mb-3">Perfil Não Encontrado</h1>
         <p className="text-slate-500 max-w-md leading-relaxed mb-6">
-          Não conseguimos encontrar seus dados com o ID fornecido. Verifique se você já completou seu cadastro no Telegram.
+          Não conseguimos encontrar seus dados com o ID fornecido (<strong>{currentUserId}</strong>).
+          <br/><br/>
+          Verifique se o ID está correto ou se as permissões (RLS) no Supabase foram liberadas.
         </p>
         <button 
             onClick={() => window.location.reload()}
