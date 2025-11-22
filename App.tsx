@@ -10,7 +10,7 @@ import EditProfileModal from './components/EditProfileModal';
 import ChatWidget from './components/ChatWidget';
 import { CURRENT_USER, LEADERBOARD_DATA } from './constants';
 import { Flame, Beef, Wheat, Droplet, Loader2, Lock, AlertCircle } from 'lucide-react';
-import { UserProfile, MealLog } from './types';
+import { UserProfile, MealLog, LeaderboardEntry } from './types';
 import { supabase } from './lib/supabase';
 
 // Helper para pegar valor de objeto ignorando Case Sensitivity (Maiúsculo/Minúsculo)
@@ -77,6 +77,7 @@ const DashboardContent: React.FC = () => {
   // User & Data State
   const [user, setUser] = useState<UserProfile>(CURRENT_USER);
   const [meals, setMeals] = useState<MealLog[]>([]);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>(LEADERBOARD_DATA);
   
   // Data de referência para exibição (pode ser hoje ou a data da última refeição)
   const [displayDate, setDisplayDate] = useState<string>(new Date().toLocaleDateString());
@@ -103,6 +104,7 @@ const DashboardContent: React.FC = () => {
     console.log("Tentando acessar com ID:", parsedId, "(Tipo:", typeof parsedId, ")");
     setCurrentUserId(parsedId.toString());
     fetchUserData(parsedId);
+    fetchLeaderboard(parsedId);
   }, []);
 
   const fetchUserData = async (userId: string | number) => {
@@ -112,7 +114,6 @@ const DashboardContent: React.FC = () => {
       console.log(`Buscando perfil para User_ID: ${userId}...`);
 
       // 1. Buscar Perfil no Supabase (NutriBot_User)
-      // .maybeSingle() evita erro JSON object requested, multiple (or no) rows returned
       const { data: profileData, error: profileError } = await supabase
         .from('NutriBot_User')
         .select('*')
@@ -134,25 +135,24 @@ const DashboardContent: React.FC = () => {
       // Atualiza estado do usuário com dados do banco
       setUser(prev => ({
         ...prev,
-        id: profileData.User_ID?.toString(),
-        name: profileData.Nome || prev.name,
-        age: profileData.Idade || prev.age,
-        weight: profileData.Peso_kg || prev.weight,
-        height: profileData.Altura_cm || prev.height,
-        goalCalories: profileData.Calorias_alvo || prev.goalCalories,
-        goalProtein: profileData['Proteína_alvo'] || prev.goalProtein,
+        id: getValue(profileData, 'User_ID')?.toString(),
+        name: getValue(profileData, 'Nome') || prev.name,
+        age: getValue(profileData, 'Idade') || prev.age,
+        weight: getValue(profileData, 'Peso_kg') || prev.weight,
+        height: getValue(profileData, 'Altura_cm') || prev.height,
+        goalCalories: getValue(profileData, 'Calorias_alvo') || prev.goalCalories,
+        goalProtein: getValue(profileData, 'Proteína_alvo') || prev.goalProtein,
         // Mantém avatar placeholder se não tiver url
         avatarUrl: prev.avatarUrl 
       }));
 
       // 2. Buscar Refeições (Refeições_NutriBot)
-      // Buscamos as últimas 50 para garantir que pegamos o dia correto
       console.log("Buscando refeições...");
       const { data: mealsData, error: mealsError } = await supabase
         .from('Refeições_NutriBot')
         .select('*')
         .eq('User_ID', userId)
-        .order('Data', { ascending: false }) // Mais recentes primeiro
+        .order('Data', { ascending: false }) 
         .limit(50);
 
       if (mealsError) {
@@ -178,9 +178,13 @@ const DashboardContent: React.FC = () => {
         // Se a refeição mais recente não é hoje, assumimos que o usuário quer ver o último dia registrado
         const targetDate = mostRecentMealDate === todayStr ? todayStr : mostRecentMealDate;
         
-        // Corrige exibição visual da data (adiciona fuso para não voltar 1 dia na exibição)
-        const dateObj = new Date(targetDate + 'T12:00:00');
-        setDisplayDate(dateObj.toLocaleDateString('pt-BR'));
+        // Corrige exibição visual da data
+        const parts = targetDate.split('-');
+        if(parts.length === 3) {
+            setDisplayDate(`${parts[2]}/${parts[1]}/${parts[0]}`);
+        } else {
+            setDisplayDate(targetDate);
+        }
         
         console.log(`Filtrando dados para a data alvo: ${targetDate}`);
 
@@ -195,7 +199,7 @@ const DashboardContent: React.FC = () => {
         activeMeals = filteredDBMeals.map((m: any) => {
           // Extração defensiva de dados
           const nomeDB = getValue(m, 'Nome');
-          const descDB = getValue(m, 'Descrição_da_refeição') || getValue(m, 'Descricao_da_refeicao'); // tenta sem acento também
+          const descDB = getValue(m, 'Descrição_da_refeição') || getValue(m, 'Descricao_da_refeicao'); 
           
           const nomeFinal = (nomeDB && nomeDB !== 'EMPTY') ? nomeDB : (descDB || 'Refeição Sem Nome');
           
@@ -203,7 +207,7 @@ const DashboardContent: React.FC = () => {
             id: (getValue(m, 'id') || Math.random()).toString(),
             time: 'Refeição', // Fallback simples
             name: nomeFinal,
-            // Converte para número e garante zero se falhar
+            // Converte para número e garante zero se falhar, usando getValue
             calories: Number(getValue(m, 'Calorias')) || 0,
             protein: Number(getValue(m, 'Proteinas')) || 0,
             carbs: Number(getValue(m, 'Carboidratos')) || 0,
@@ -224,6 +228,78 @@ const DashboardContent: React.FC = () => {
     }
   };
 
+  const fetchLeaderboard = async (currentUserId: string | number) => {
+    try {
+        console.log("Buscando dados do Leaderboard...");
+        
+        // 1. Pegar todos os usuários
+        const { data: allUsers, error: usersError } = await supabase
+            .from('NutriBot_User')
+            .select('User_ID, Nome, Calorias_alvo');
+        
+        if (usersError) throw usersError;
+
+        // 2. Pegar todas as refeições do dia (ou recente) para calcular score
+        // Para simplificar e não pesar, vamos pegar as refeições e agrupar no frontend
+        const { data: allMeals, error: mealsError } = await supabase
+            .from('Refeições_NutriBot')
+            .select('User_ID, Calorias, Data');
+
+        if (mealsError) throw mealsError;
+
+        if (!allUsers || !allMeals) return;
+
+        // Agrupar calorias por usuário (Considerando a data mais recente globalmente ou hoje)
+        // Por simplicidade, vamos somar tudo que bater com a data de hoje.
+        const todayStr = new Date().toISOString().split('T')[0];
+        
+        const userScores: Record<string, number> = {};
+
+        allMeals.forEach((meal: any) => {
+            const mDate = getValue(meal, 'Data');
+            // Lógica simplificada: soma se for a data de hoje. 
+            // Em produção ideal, usaria a mesma lógica de "dia ativo" de cada um.
+            if (mDate && mDate.toString().startsWith(todayStr)) {
+                const uid = getValue(meal, 'User_ID');
+                const cals = Number(getValue(meal, 'Calorias')) || 0;
+                userScores[uid] = (userScores[uid] || 0) + cals;
+            }
+        });
+
+        const leaderboardData: LeaderboardEntry[] = allUsers.map((u: any) => {
+            const uid = getValue(u, 'User_ID');
+            const name = getValue(u, 'Nome') || 'Usuário';
+            const goal = Number(getValue(u, 'Calorias_alvo')) || 2000;
+            const current = userScores[uid] || 0;
+            
+            // Score é a porcentagem da meta
+            const score = Math.min(100, Math.round((current / goal) * 100));
+
+            return {
+                rank: 0, // Será calculado após sort
+                name: name,
+                score: score, // Porcentagem
+                isUser: uid.toString() === currentUserId.toString(),
+                avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`
+            };
+        });
+
+        // Ordenar por score decrescente
+        leaderboardData.sort((a, b) => b.score - a.score);
+
+        // Atribuir rank
+        const rankedData = leaderboardData.map((entry, index) => ({
+            ...entry,
+            rank: index + 1
+        }));
+
+        setLeaderboard(rankedData);
+
+    } catch (error) {
+        console.error("Erro no Leaderboard:", error);
+    }
+  };
+
   // Calculate total consumed macros based on ACTIVE meals
   const totals = useMemo(() => {
     return meals.reduce(
@@ -241,7 +317,6 @@ const DashboardContent: React.FC = () => {
 
   const handleSaveProfile = (updatedUser: UserProfile) => {
     setUser(updatedUser);
-    // Aqui você poderia adicionar lógica para salvar de volta no Supabase via RPC ou Update direto se permitido
   };
 
   // TELAS DE ESTADO (Loading, Sem ID, Negado)
@@ -385,7 +460,7 @@ const DashboardContent: React.FC = () => {
 
                 {/* Leaderboard (Takes up 1 column on wide screens) */}
                 <div className="xl:col-span-1 h-full">
-                    <Leaderboard entries={LEADERBOARD_DATA} />
+                    <Leaderboard entries={leaderboard} />
                 </div>
                 </section>
             </div>
