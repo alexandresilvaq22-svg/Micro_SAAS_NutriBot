@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { Mail, Lock, ArrowRight, Loader2, User } from 'lucide-react';
 import { UserProfile } from '../types';
+import { supabase } from '../lib/supabase';
 
 interface LoginProps {
-  onLogin: (userData?: Partial<UserProfile>) => void;
+  onLogin: (userData?: Partial<UserProfile> & { userId?: string }) => void;
 }
 
 const Login: React.FC<LoginProps> = ({ onLogin }) => {
@@ -18,7 +19,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
@@ -30,16 +31,56 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       return;
     }
 
-    // Simulating a network request verification
-    setTimeout(() => {
-      setIsLoading(false);
+    try {
       if (isRegistering) {
-        // Pass the new user name back to App
-        onLogin({ name: name });
+        // Registro na tabela Login_User_NutriBot
+        const { data, error: insertError } = await supabase
+          .from('Login_User_NutriBot')
+          .insert([
+            { 
+              email: email, 
+              senha: password,
+              data_cadastro: new Date().toISOString(),
+              // Aqui assumimos que o ID é gerado automaticamente ou podemos passar um user_id
+              // Se o banco espera um user_id (link com telegram), talvez precisemos gerar um temporário
+            }
+          ])
+          .select();
+
+        if (insertError) throw insertError;
+
+        // Sucesso no registro
+        // Usaremos o ID do registro de login ou o email como identificador provisório
+        const newUser = data && data[0];
+        onLogin({ 
+          name: name,
+          userId: newUser ? newUser.id.toString() : undefined // Passamos o ID para buscar o perfil depois
+        });
+
       } else {
-        onLogin();
+        // Login: Consulta na tabela Login_User_NutriBot
+        const { data, error: fetchError } = await supabase
+          .from('Login_User_NutriBot')
+          .select('*')
+          .eq('email', email)
+          .eq('senha', password) // Nota: Em produção, senhas devem ser hash, não texto puro
+          .single();
+
+        if (fetchError || !data) {
+          throw new Error('Email ou senha incorretos.');
+        }
+
+        // Sucesso no Login
+        onLogin({
+             userId: data.id.toString() // Usaremos este ID para tentar achar o perfil NutriBot_User
+        });
       }
-    }, 1500);
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Erro ao conectar com o servidor. Tente novamente.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const toggleMode = () => {
@@ -123,7 +164,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 <label className="text-xs font-bold text-slate-600 uppercase">Senha</label>
                 {!isRegistering && (
                   <a href="#" className="text-xs font-medium text-emerald-600 hover:text-emerald-700 transition-colors">
-                    Esqueceu a senha?
+                    <span>Esqueceu a senha?</span>
                   </a>
                 )}
               </div>

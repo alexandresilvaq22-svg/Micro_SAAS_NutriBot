@@ -34,3 +34,42 @@ export interface LeaderboardEntry {
   isUser?: boolean;
   avatarUrl: string;
 }
+
+// Interfaces do Banco de Dados (Supabase)
+
+export interface LoginUserDB {
+  id: number;
+  email: string;
+  senha: string;
+  data_cadastro: string;
+  user_id?: string; // Referência opcional para linkar com o NutriBot_User
+}
+
+export interface NutriBotUserDB {
+  User_ID: string; // ID do Telegram ou ID gerado
+  Nome: string;
+  Peso_kg: number;
+  Altura_cm: number;
+  Idade: number;
+  Sexo: string;
+  Objetivo: string;
+  Calorias_alvo: number;
+  Proteína_alvo: number;
+  Alergias: string;
+  Data_registro: string;
+  behavior_flags: string;
+}
+
+export interface RefeicaoDB {
+  id: number;
+  User_ID: string;
+  Data: string;
+  Nome: string;
+  "Descrição_da_refeição": string;
+  Meta_Calorias: number;
+  Meta_Proteinas: number;
+  Calorias: number;
+  Proteinas: number;
+  Carboidratos: number;
+  Gorduras: number;
+}

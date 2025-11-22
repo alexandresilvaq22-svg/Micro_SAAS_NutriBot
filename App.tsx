@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import MacroCard from './components/MacroCard';
@@ -9,8 +9,9 @@ import EditProfileModal from './components/EditProfileModal';
 import ChatWidget from './components/ChatWidget';
 import Login from './components/Login';
 import { CURRENT_USER, RECENT_MEALS, LEADERBOARD_DATA } from './constants';
-import { Flame, Beef, Wheat, Droplet } from 'lucide-react';
-import { UserProfile } from './types';
+import { Flame, Beef, Wheat, Droplet, Loader2 } from 'lucide-react';
+import { UserProfile, MealLog, NutriBotUserDB, RefeicaoDB } from './types';
+import { supabase } from './lib/supabase';
 
 // Error Boundary Component to catch runtime errors
 class ErrorBoundary extends React.Component<any, { hasError: boolean, error: Error | null }> {
@@ -60,14 +61,78 @@ class ErrorBoundary extends React.Component<any, { hasError: boolean, error: Err
 const DashboardContent: React.FC = () => {
   // Auth State
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   
-  // User & Modal State
+  // User & Data State
   const [user, setUser] = useState<UserProfile>(CURRENT_USER);
+  const [meals, setMeals] = useState<MealLog[]>(RECENT_MEALS);
+  const [isLoadingData, setIsLoadingData] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
-  // Calculate total consumed macros
+  // Fetch Data from Supabase when authenticated
+  useEffect(() => {
+    if (isAuthenticated && currentUserId) {
+      const fetchData = async () => {
+        setIsLoadingData(true);
+        try {
+          // 1. Fetch User Profile (NutriBot_User)
+          // Tenta buscar pelo User_ID que assumimos ser o mesmo do login ou linkado
+          const { data: profileData, error: profileError } = await supabase
+            .from('NutriBot_User')
+            .select('*')
+            .eq('User_ID', currentUserId)
+            .single();
+
+          if (profileData) {
+            setUser(prev => ({
+              ...prev,
+              id: profileData.User_ID,
+              name: profileData.Nome || prev.name,
+              age: profileData.Idade || prev.age,
+              weight: profileData.Peso_kg || prev.weight,
+              height: profileData.Altura_cm || prev.height,
+              goalCalories: profileData.Calorias_alvo || prev.goalCalories,
+              goalProtein: profileData['Proteína_alvo'] || prev.goalProtein,
+            }));
+          } else if (profileError) {
+            console.log("Perfil não encontrado no NutriBot_User, usando dados padrão ou de login.");
+          }
+
+          // 2. Fetch Meals (Refeições_NutriBot)
+          const { data: mealsData, error: mealsError } = await supabase
+            .from('Refeições_NutriBot')
+            .select('*')
+            .eq('User_ID', currentUserId)
+            .order('Data', { ascending: false })
+            .limit(7);
+
+          if (mealsData) {
+            const formattedMeals: MealLog[] = mealsData.map((m: RefeicaoDB) => ({
+              id: m.id.toString(),
+              time: new Date(m.Data).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              name: m.Nome || m['Descrição_da_refeição'],
+              calories: m.Calorias,
+              protein: m.Proteinas,
+              carbs: m.Carboidratos,
+              fats: m.Gorduras
+            }));
+            setMeals(formattedMeals);
+          }
+
+        } catch (error) {
+          console.error("Erro ao buscar dados:", error);
+        } finally {
+          setIsLoadingData(false);
+        }
+      };
+
+      fetchData();
+    }
+  }, [isAuthenticated, currentUserId]);
+
+  // Calculate total consumed macros based on REAL data
   const totals = useMemo(() => {
-    return RECENT_MEALS.reduce(
+    return meals.reduce(
       (acc, meal) => ({
         calories: acc.calories + meal.calories,
         protein: acc.protein + meal.protein,
@@ -76,23 +141,30 @@ const DashboardContent: React.FC = () => {
       }),
       { calories: 0, protein: 0, carbs: 0, fats: 0 }
     );
-  }, []);
+  }, [meals]);
 
   const remainingCalories = Math.max(0, user.goalCalories - totals.calories);
 
   const handleSaveProfile = (updatedUser: UserProfile) => {
     setUser(updatedUser);
+    // Aqui você poderia adicionar lógica para salvar de volta no Supabase
   };
 
-  const handleLogin = (userData?: Partial<UserProfile>) => {
+  const handleLogin = (userData?: Partial<UserProfile> & { userId?: string }) => {
     if (userData) {
       setUser(prev => ({ ...prev, ...userData }));
+      if (userData.userId) {
+        setCurrentUserId(userData.userId);
+      }
     }
     setIsAuthenticated(true);
   };
 
   const handleLogout = () => {
     setIsAuthenticated(false);
+    setCurrentUserId(null);
+    setMeals(RECENT_MEALS); // Reset to defaults or empty
+    setUser(CURRENT_USER);
   };
 
   // If not authenticated, show Login screen
@@ -106,6 +178,15 @@ const DashboardContent: React.FC = () => {
       <Header user={user} remainingCalories={remainingCalories} />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {isLoadingData && (
+           <div className="fixed inset-0 bg-white/50 z-50 flex items-center justify-center backdrop-blur-sm">
+              <div className="bg-white p-4 rounded-xl shadow-lg flex items-center gap-3">
+                  <Loader2 className="animate-spin text-emerald-600" />
+                  <span className="font-medium text-slate-600">Sincronizando dados...</span>
+              </div>
+           </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           
           {/* Left Column: Profile (Sticky on Desktop) */}
@@ -153,7 +234,7 @@ const DashboardContent: React.FC = () => {
                     data={{
                         name: 'Carboidratos',
                         current: totals.carbs,
-                        target: 300, // Mock target
+                        target: 300, // Mock target or fetch from DB if available
                         unit: 'g',
                         color: '#f59e0b', // amber-500
                     }}
@@ -163,7 +244,7 @@ const DashboardContent: React.FC = () => {
                     data={{
                         name: 'Gorduras',
                         current: totals.fats,
-                        target: 70, // Mock target
+                        target: 70, // Mock target or fetch from DB if available
                         unit: 'g',
                         color: '#f43f5e', // rose-500
                     }}
@@ -177,7 +258,7 @@ const DashboardContent: React.FC = () => {
                 
                 {/* Meal Logs (Takes up 2 columns on wide screens) */}
                 <div className="xl:col-span-2 h-full">
-                    <MealTable meals={RECENT_MEALS} />
+                    <MealTable meals={meals} />
                 </div>
 
                 {/* Leaderboard (Takes up 1 column on wide screens) */}
