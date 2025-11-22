@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Mail, Lock, ArrowRight, Loader2, User } from 'lucide-react';
+import { Mail, Lock, ArrowRight, Loader2, User, ArrowLeft, CheckCircle } from 'lucide-react';
 import { UserProfile } from '../types';
 import { supabase } from '../lib/supabase';
 
@@ -8,7 +8,7 @@ interface LoginProps {
 }
 
 const Login: React.FC<LoginProps> = ({ onLogin }) => {
-  const [isRegistering, setIsRegistering] = useState(false);
+  const [mode, setMode] = useState<'login' | 'register' | 'forgot'>('login');
   
   // Form States
   const [name, setName] = useState('');
@@ -18,41 +18,108 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   // UI States
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+
+  // Validação de Senha Forte
+  const validatePassword = (pass: string): string | null => {
+    if (pass.length < 8) return 'A senha deve ter no mínimo 8 caracteres.';
+    
+    const hasUpperCase = /[A-Z]/.test(pass);
+    const hasLowerCase = /[a-z]/.test(pass);
+    const hasNumbers = /\d/.test(pass);
+    const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(pass);
+
+    if (!hasUpperCase || !hasLowerCase || !hasNumbers || !hasSpecialChar) {
+      return 'A senha deve conter: letras maiúsculas, minúsculas, números e caracteres especiais.';
+    }
+    return null;
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSuccessMessage('');
+    setIsLoading(true);
+
+    if (!email || !password) {
+      setIsLoading(false);
+      setError('Preencha o e-mail e a nova senha.');
+      return;
+    }
+
+    const passwordError = validatePassword(password);
+    if (passwordError) {
+      setIsLoading(false);
+      setError(passwordError);
+      return;
+    }
+
+    try {
+      // 1. Verificar se o email existe
+      const { data: existingUser, error: searchError } = await supabase
+        .from('Login_User_NutriBot')
+        .select('id')
+        .eq('email', email)
+        .single();
+
+      if (searchError || !existingUser) {
+        setError('E-mail não encontrado na nossa base de dados.');
+        setIsLoading(false);
+        return;
+      }
+
+      // 2. Atualizar a senha
+      const { error: updateError } = await supabase
+        .from('Login_User_NutriBot')
+        .update({ senha: password })
+        .eq('email', email);
+
+      if (updateError) throw updateError;
+
+      setSuccessMessage('Senha redefinida com sucesso! Você pode fazer login agora.');
+      setTimeout(() => {
+        setMode('login');
+        setPassword('');
+        setSuccessMessage('');
+      }, 2000);
+
+    } catch (err: any) {
+      console.error(err);
+      setError('Erro ao atualizar senha. Tente novamente.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setIsLoading(true);
 
+    if (mode === 'forgot') {
+      await handleResetPassword(e);
+      return;
+    }
+
     // Validation
-    if (!email || !password || (isRegistering && !name)) {
+    if (!email || !password || (mode === 'register' && !name)) {
       setIsLoading(false);
       setError('Por favor, preencha todos os campos.');
       return;
     }
 
     // Validação de Senha Forte (Apenas no Cadastro)
-    if (isRegistering) {
-      if (password.length < 8) {
+    if (mode === 'register') {
+      const passwordError = validatePassword(password);
+      if (passwordError) {
         setIsLoading(false);
-        setError('A senha deve ter no mínimo 8 caracteres.');
-        return;
-      }
-
-      const hasUpperCase = /[A-Z]/.test(password);
-      const hasLowerCase = /[a-z]/.test(password);
-      const hasNumbers = /\d/.test(password);
-      const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
-
-      if (!hasUpperCase || !hasLowerCase || !hasNumbers || !hasSpecialChar) {
-        setIsLoading(false);
-        setError('A senha deve conter: letras maiúsculas, minúsculas, números e caracteres especiais.');
+        setError(passwordError);
         return;
       }
     }
 
     try {
-      if (isRegistering) {
+      if (mode === 'register') {
         // 1. Verificar se o usuário já existe antes de cadastrar
         const { data: existingUser, error: checkError } = await supabase
           .from('Login_User_NutriBot')
@@ -110,8 +177,6 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         const user = users[0];
 
         // 3. Verificar a senha
-        // Nota: Idealmente senhas devem ser comparadas usando hash no backend, 
-        // mas seguindo a estrutura atual de comparação direta:
         if (user.senha !== password) {
           setError('Senha incorreta. Tente novamente.');
           setIsLoading(false);
@@ -132,11 +197,41 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   };
 
   const toggleMode = () => {
-    setIsRegistering(!isRegistering);
+    setMode(mode === 'login' ? 'register' : 'login');
     setError('');
+    setSuccessMessage('');
     setName('');
     setEmail('');
     setPassword('');
+  };
+
+  const goToForgot = () => {
+    setMode('forgot');
+    setError('');
+    setSuccessMessage('');
+    setPassword('');
+  };
+
+  const goBackToLogin = () => {
+    setMode('login');
+    setError('');
+    setSuccessMessage('');
+  };
+
+  const getTitle = () => {
+    switch(mode) {
+      case 'register': return 'Crie sua conta';
+      case 'forgot': return 'Recuperar Senha';
+      default: return 'Bem-vindo de volta!';
+    }
+  };
+
+  const getSubtitle = () => {
+    switch(mode) {
+      case 'register': return 'Comece sua jornada saudável hoje mesmo.';
+      case 'forgot': return 'Redefina sua senha para acessar sua conta.';
+      default: return 'Acesse o NutriBot para acompanhar sua evolução.';
+    }
   };
 
   return (
@@ -157,21 +252,17 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 <span className="text-white font-bold text-3xl"><span>N</span></span>
              </div>
             <h1 className="text-2xl font-bold text-slate-800">
-              <span>{isRegistering ? 'Crie sua conta' : 'Bem-vindo de volta!'}</span>
+              <span>{getTitle()}</span>
             </h1>
             <p className="text-slate-500 mt-2 text-sm">
-              <span>
-                {isRegistering 
-                  ? 'Comece sua jornada saudável hoje mesmo.' 
-                  : 'Acesse o NutriBot para acompanhar sua evolução.'}
-              </span>
+              <span>{getSubtitle()}</span>
             </p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
             
             {/* Name Input (Register Only) */}
-            {isRegistering && (
+            {mode === 'register' && (
               <div className="space-y-1.5 animate-fade-in-down">
                 <label className="text-xs font-bold text-slate-600 uppercase ml-1"><span>Nome Completo</span></label>
                 <div className="relative group">
@@ -209,11 +300,17 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
             {/* Password Input */}
             <div className="space-y-1.5">
               <div className="flex justify-between items-center ml-1">
-                <label className="text-xs font-bold text-slate-600 uppercase"><span>Senha</span></label>
-                {!isRegistering && (
-                  <a href="#" className="text-xs font-medium text-emerald-600 hover:text-emerald-700 transition-colors">
+                <label className="text-xs font-bold text-slate-600 uppercase">
+                  <span>{mode === 'forgot' ? 'Nova Senha' : 'Senha'}</span>
+                </label>
+                {mode === 'login' && (
+                  <button 
+                    type="button" 
+                    onClick={goToForgot}
+                    className="text-xs font-medium text-emerald-600 hover:text-emerald-700 transition-colors outline-none"
+                  >
                     <span>Esqueceu a senha?</span>
-                  </a>
+                  </button>
                 )}
               </div>
               <div className="relative group">
@@ -224,11 +321,11 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                   type="password" 
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
+                  placeholder={mode === 'forgot' ? "Nova senha segura" : "••••••••"}
                   className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all"
                 />
               </div>
-              {isRegistering && (
+              {(mode === 'register' || mode === 'forgot') && (
                 <p className="text-[10px] text-slate-400 ml-1">
                   <span>Mín. 8 caracteres, maiúsculas, minúsculas, números e símbolos.</span>
                 </p>
@@ -241,6 +338,13 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
               </div>
             )}
 
+            {successMessage && (
+              <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-lg text-emerald-600 text-sm font-medium text-center animate-fade-in flex items-center justify-center gap-2">
+                <CheckCircle size={16} />
+                <span>{successMessage}</span>
+              </div>
+            )}
+
             <button 
               type="submit" 
               disabled={isLoading}
@@ -250,24 +354,37 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 <Loader2 className="animate-spin" size={20} />
               ) : (
                 <>
-                  <span>{isRegistering ? 'Criar Conta Grátis' : 'Entrar no Dashboard'}</span>
-                  <ArrowRight size={20} />
+                  <span>
+                    {mode === 'register' ? 'Criar Conta Grátis' : 
+                     mode === 'forgot' ? 'Redefinir Senha' : 'Entrar no Dashboard'}
+                  </span>
+                  {mode !== 'forgot' && <ArrowRight size={20} />}
                 </>
               )}
             </button>
           </form>
 
           <div className="mt-8 text-center">
-            <p className="text-sm text-slate-500">
-              <span>{isRegistering ? 'Já tem uma conta?' : 'Não tem uma conta?'}</span>
-              {' '}
+            {mode === 'forgot' ? (
               <button 
-                onClick={toggleMode}
-                className="font-bold text-emerald-600 hover:text-emerald-700 transition-colors outline-none hover:underline"
+                onClick={goBackToLogin}
+                className="flex items-center justify-center gap-2 mx-auto font-bold text-slate-500 hover:text-slate-700 transition-colors outline-none"
               >
-                <span>{isRegistering ? 'Fazer Login' : 'Cadastre-se Grátis'}</span>
+                <ArrowLeft size={16} />
+                <span>Voltar ao Login</span>
               </button>
-            </p>
+            ) : (
+              <p className="text-sm text-slate-500">
+                <span>{mode === 'register' ? 'Já tem uma conta?' : 'Não tem uma conta?'}</span>
+                {' '}
+                <button 
+                  onClick={toggleMode}
+                  className="font-bold text-emerald-600 hover:text-emerald-700 transition-colors outline-none hover:underline"
+                >
+                  <span>{mode === 'register' ? 'Fazer Login' : 'Cadastre-se Grátis'}</span>
+                </button>
+              </p>
+            )}
           </div>
         </div>
         
