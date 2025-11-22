@@ -108,7 +108,12 @@ const Header: React.FC<HeaderProps> = ({ user, remainingCalories }) => {
         <div className="hidden md:flex flex-1 justify-center px-4">
           <div className="bg-emerald-50 border border-emerald-100 text-emerald-800 px-6 py-2 rounded-full text-sm font-medium shadow-sm flex items-center gap-2 animate-fade-in-down">
             <span>🎉</span>
-            <span>Parabéns, {user.name.split(' ')[0]}! Você está a apenas <strong>{remainingCalories} kcal</strong> da sua meta diária!</span>
+            {/* Splitting strings into spans protects against translation extension crashes */}
+            <span>Parabéns, </span>
+            <span>{user.name.split(' ')[0]}</span>
+            <span>! Você está a apenas </span>
+            <strong>{remainingCalories} kcal</strong>
+            <span> da sua meta diária!</span>
           </div>
         </div>
 
@@ -177,14 +182,18 @@ const Header: React.FC<HeaderProps> = ({ user, remainingCalories }) => {
                           <div className="flex-1">
                             <div className="flex justify-between items-start mb-1">
                               <h4 className={`text-sm ${!notif.read ? 'font-bold text-slate-800' : 'font-medium text-slate-600'}`}>
-                                {notif.title}
+                                <span>{notif.title}</span>
                               </h4>
                               {!notif.read && (
                                 <span className="w-2 h-2 bg-orange-500 rounded-full"></span>
                               )}
                             </div>
-                            <p className="text-xs text-slate-500 leading-relaxed mb-2">{notif.message}</p>
-                            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">{notif.time}</p>
+                            <p className="text-xs text-slate-500 leading-relaxed mb-2">
+                                <span>{notif.message}</span>
+                            </p>
+                            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">
+                                <span>{notif.time}</span>
+                            </p>
                           </div>
                         </div>
                       ))}
@@ -197,7 +206,7 @@ const Header: React.FC<HeaderProps> = ({ user, remainingCalories }) => {
           
           <div className="flex items-center gap-3 border-l border-slate-100 pl-4">
             <div className="text-right hidden sm:block">
-              <p className="text-sm font-semibold text-slate-700">{user.name}</p>
+              <p className="text-sm font-semibold text-slate-700"><span>{user.name}</span></p>
               <p className="text-xs text-slate-500">Plano Pro</p>
             </div>
             <img 
@@ -212,7 +221,9 @@ const Header: React.FC<HeaderProps> = ({ user, remainingCalories }) => {
       {/* Mobile Message */}
       <div className="md:hidden px-4 pb-3">
          <div className="bg-emerald-50 border border-emerald-100 text-emerald-800 p-3 rounded-lg text-xs font-medium text-center">
-            Parabéns, {user.name.split(' ')[0]}! Faltam <strong>{remainingCalories} kcal</strong> para sua meta!
+            <span>Parabéns, {user.name.split(' ')[0]}! Faltam </span>
+            <strong>{remainingCalories} kcal</strong>
+            <span> para sua meta!</span>
           </div>
       </div>
     </header>

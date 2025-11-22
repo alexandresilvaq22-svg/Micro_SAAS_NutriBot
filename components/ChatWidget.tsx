@@ -93,9 +93,9 @@ const ChatWidget: React.FC = () => {
                 <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-400 border-2 border-slate-900 rounded-full"></span>
               </div>
               <div>
-                <h3 className="font-bold text-white text-sm">NutriBot AI</h3>
+                <h3 className="font-bold text-white text-sm"><span>NutriBot AI</span></h3>
                 <p className="text-emerald-400 text-xs flex items-center gap-1">
-                  <Sparkles size={10} /> Online agora
+                  <Sparkles size={10} /> <span>Online agora</span>
                 </p>
               </div>
             </div>
@@ -122,7 +122,8 @@ const ChatWidget: React.FC = () => {
                         : 'bg-white text-slate-700 border border-slate-200 rounded-tl-none'
                     }`}
                   >
-                    {msg.text}
+                    {/* WRAPPED IN SPAN TO PREVENT REMOVECHILD ERRORS */}
+                    <span>{msg.text}</span>
                   </div>
                 </div>
               ))}
