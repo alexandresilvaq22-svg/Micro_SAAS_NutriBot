@@ -31,6 +31,26 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
       return;
     }
 
+    // Validação de Senha Forte (Apenas no Cadastro)
+    if (isRegistering) {
+      if (password.length < 8) {
+        setIsLoading(false);
+        setError('A senha deve ter no mínimo 8 caracteres.');
+        return;
+      }
+
+      const hasUpperCase = /[A-Z]/.test(password);
+      const hasLowerCase = /[a-z]/.test(password);
+      const hasNumbers = /\d/.test(password);
+      const hasSpecialChar = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+
+      if (!hasUpperCase || !hasLowerCase || !hasNumbers || !hasSpecialChar) {
+        setIsLoading(false);
+        setError('A senha deve conter: letras maiúsculas, minúsculas, números e caracteres especiais.');
+        return;
+      }
+    }
+
     try {
       if (isRegistering) {
         // Registro na tabela Login_User_NutriBot
@@ -180,6 +200,11 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                   className="w-full pl-10 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 transition-all"
                 />
               </div>
+              {isRegistering && (
+                <p className="text-[10px] text-slate-400 ml-1">
+                  <span>Mín. 8 caracteres, maiúsculas, minúsculas, números e símbolos.</span>
+                </p>
+              )}
             </div>
 
             {error && (
