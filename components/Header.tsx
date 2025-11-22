@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bell, Menu, X, Check, Droplet, Trophy, Info } from 'lucide-react';
+import { Bell, Menu, Droplet, Trophy, Info } from 'lucide-react';
 import { UserProfile } from '../types';
 
 interface HeaderProps {

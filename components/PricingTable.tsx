@@ -64,7 +64,7 @@ const PricingTable: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-7xl mx-auto align-top items-start">
-        {plans.map((plan, index) => (
+        {plans.map((plan) => (
           <div
             key={plan.name}
             className={`relative flex flex-col p-6 rounded-3xl transition-all duration-300 ${
