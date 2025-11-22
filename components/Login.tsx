@@ -68,12 +68,14 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 <span className="text-white font-bold text-3xl">N</span>
              </div>
             <h1 className="text-2xl font-bold text-slate-800">
-              {isRegistering ? 'Crie sua conta' : 'Bem-vindo de volta!'}
+              <span>{isRegistering ? 'Crie sua conta' : 'Bem-vindo de volta!'}</span>
             </h1>
             <p className="text-slate-500 mt-2 text-sm">
-              {isRegistering 
-                ? 'Comece sua jornada saudável hoje mesmo.' 
-                : 'Acesse o NutriBot para acompanhar sua evolução.'}
+              <span>
+                {isRegistering 
+                  ? 'Comece sua jornada saudável hoje mesmo.' 
+                  : 'Acesse o NutriBot para acompanhar sua evolução.'}
+              </span>
             </p>
           </div>
 
@@ -141,7 +143,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
             {error && (
               <div className="p-3 bg-red-50 border border-red-100 rounded-lg text-red-600 text-sm font-medium text-center animate-fade-in">
-                {error}
+                <span>{error}</span>
               </div>
             )}
 
@@ -154,7 +156,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 <Loader2 className="animate-spin" size={20} />
               ) : (
                 <>
-                  {isRegistering ? 'Criar Conta Grátis' : 'Entrar no Dashboard'}
+                  <span>{isRegistering ? 'Criar Conta Grátis' : 'Entrar no Dashboard'}</span>
                   <ArrowRight size={20} />
                 </>
               )}
@@ -163,13 +165,13 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
           <div className="mt-8 text-center">
             <p className="text-sm text-slate-500">
-              {isRegistering ? 'Já tem uma conta?' : 'Não tem uma conta?'}
+              <span>{isRegistering ? 'Já tem uma conta?' : 'Não tem uma conta?'}</span>
               {' '}
               <button 
                 onClick={toggleMode}
                 className="font-bold text-emerald-600 hover:text-emerald-700 transition-colors outline-none hover:underline"
               >
-                {isRegistering ? 'Fazer Login' : 'Cadastre-se Grátis'}
+                <span>{isRegistering ? 'Fazer Login' : 'Cadastre-se Grátis'}</span>
               </button>
             </p>
           </div>

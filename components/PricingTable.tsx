@@ -56,10 +56,11 @@ const PricingTable: React.FC = () => {
     <section className="py-12 sm:py-16">
       <div className="text-center mb-12">
         <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-800 mb-4">
-          Escolha o Plano Perfeito para o Seu <span className="text-emerald-600">Shape</span>
+          <span>Escolha o Plano Perfeito para o Seu </span>
+          <span className="text-emerald-600">Shape</span>
         </h2>
         <p className="text-slate-500 text-lg max-w-2xl mx-auto">
-          Desbloqueie todo o potencial do NutriBot e alcance suas metas mais rápido com nossos planos premium.
+          <span>Desbloqueie todo o potencial do NutriBot e alcance suas metas mais rápido com nossos planos premium.</span>
         </p>
       </div>
 
@@ -84,7 +85,7 @@ const PricingTable: React.FC = () => {
             <div className="mb-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className={`text-xl font-bold ${plan.highlight ? 'text-emerald-800' : 'text-slate-800'}`}>
-                  {plan.name}
+                  <span>{plan.name}</span>
                 </h3>
                 <div className={`p-2 rounded-lg ${plan.highlight ? 'bg-amber-100' : 'bg-slate-100'}`}>
                     {plan.icon}
@@ -94,7 +95,7 @@ const PricingTable: React.FC = () => {
                 <span className="text-4xl font-extrabold text-slate-900">{plan.price}</span>
                 {plan.price !== 'R$ 0,00' && <span className="text-slate-500 font-medium">{plan.period}</span>}
               </div>
-              <p className="text-sm text-slate-500 mt-2">{plan.description}</p>
+              <p className="text-sm text-slate-500 mt-2"><span>{plan.description}</span></p>
             </div>
 
             <ul className="space-y-4 mb-8 flex-1">
@@ -119,7 +120,7 @@ const PricingTable: React.FC = () => {
                   : 'bg-white border-2 border-slate-200 text-slate-600 hover:border-emerald-500 hover:text-emerald-600'
               }`}
             >
-              {plan.price === 'R$ 0,00' ? 'Começar Agora' : 'Assinar Agora'}
+              <span>{plan.price === 'R$ 0,00' ? 'Começar Agora' : 'Assinar Agora'}</span>
             </button>
           </div>
         ))}
