@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState, useEffect } from 'react';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
@@ -11,6 +12,17 @@ import { CURRENT_USER, LEADERBOARD_DATA } from './constants';
 import { Flame, Beef, Wheat, Droplet, Loader2, Lock, AlertCircle } from 'lucide-react';
 import { UserProfile, MealLog, RefeicaoDB } from './types';
 import { supabase } from './lib/supabase';
+
+// Helper para pegar valor de objeto ignorando Case Sensitivity (Maiúsculo/Minúsculo)
+// Ex: encontra 'Calorias', 'calorias' ou 'CALORIAS'
+const getValue = (obj: any, key: string) => {
+  if (!obj) return undefined;
+  if (obj[key] !== undefined) return obj[key];
+  
+  const lowerKey = key.toLowerCase();
+  const foundKey = Object.keys(obj).find(k => k.toLowerCase() === lowerKey);
+  return foundKey ? obj[foundKey] : undefined;
+};
 
 // Error Boundary Component to catch runtime errors
 class ErrorBoundary extends React.Component<any, { hasError: boolean, error: Error | null }> {
@@ -151,39 +163,56 @@ const DashboardContent: React.FC = () => {
       
       if (mealsData && mealsData.length > 0) {
         console.log(`Total de refeições encontradas: ${mealsData.length}`);
+        
+        // Log para debug dos campos da primeira refeição
+        console.log("Amostra da primeira refeição (raw):", mealsData[0]);
 
         // LÓGICA DE DATA INTELIGENTE:
-        // 1. Verifica se tem refeição hoje (Data local)
-        // 2. Se não, pega a data da refeição mais recente encontrada no banco
-        
         const todayStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-        const mostRecentMealDate = mealsData[0].Data; // Já ordenado desc
+        
+        // Pega a data mais recente disponível
+        // getValue garante que pegamos 'Data' ou 'data'
+        const rawDate = getValue(mealsData[0], 'Data');
+        const mostRecentMealDate = typeof rawDate === 'string' ? rawDate.trim().split(' ')[0] : todayStr;
         
         // Se a refeição mais recente não é hoje, assumimos que o usuário quer ver o último dia registrado
-        // Isso corrige o problema de "Dados Zerados" se os dados forem de 2025 ou do passado
         const targetDate = mostRecentMealDate === todayStr ? todayStr : mostRecentMealDate;
         
-        setDisplayDate(new Date(targetDate).toLocaleDateString('pt-BR'));
-        console.log(`Exibindo dados para a data: ${targetDate}`);
+        // Corrige exibição visual da data (adiciona fuso para não voltar 1 dia na exibição)
+        const dateObj = new Date(targetDate + 'T12:00:00');
+        setDisplayDate(dateObj.toLocaleDateString('pt-BR'));
+        
+        console.log(`Filtrando dados para a data alvo: ${targetDate}`);
 
         // Filtra apenas as refeições desse "Dia Ativo"
-        const filteredDBMeals = mealsData.filter((m: RefeicaoDB) => m.Data === targetDate);
+        const filteredDBMeals = mealsData.filter((m: any) => {
+            const mDate = getValue(m, 'Data');
+            return mDate && mDate.toString().startsWith(targetDate);
+        });
 
-        activeMeals = filteredDBMeals.map((m: RefeicaoDB) => ({
-          id: m.id.toString(),
-          // Tenta criar hora bonita, fallback para string vazia
-          time: new Date(`${m.Data}T12:00:00`).toLocaleDateString('pt-BR') === 'Invalid Date' 
-                ? '00:00' 
-                : 'Refeição', // Se não tiver coluna hora, deixa genérico ou extrai de created_at se houver
-          name: m.Nome && m.Nome !== 'EMPTY' ? m.Nome : (m['Descrição_da_refeição'] || 'Refeição Sem Nome'),
-          calories: Number(m.Calorias) || 0,
-          protein: Number(m.Proteinas) || 0,
-          carbs: Number(m.Carboidratos) || 0,
-          fats: Number(m.Gorduras) || 0
-        }));
+        console.log(`Refeições após filtro de data: ${filteredDBMeals.length}`);
+
+        activeMeals = filteredDBMeals.map((m: any) => {
+          // Extração defensiva de dados
+          const nomeDB = getValue(m, 'Nome');
+          const descDB = getValue(m, 'Descrição_da_refeição') || getValue(m, 'Descricao_da_refeicao'); // tenta sem acento também
+          
+          const nomeFinal = (nomeDB && nomeDB !== 'EMPTY') ? nomeDB : (descDB || 'Refeição Sem Nome');
+          
+          return {
+            id: (getValue(m, 'id') || Math.random()).toString(),
+            time: 'Refeição', // Fallback simples
+            name: nomeFinal,
+            // Converte para número e garante zero se falhar
+            calories: Number(getValue(m, 'Calorias')) || 0,
+            protein: Number(getValue(m, 'Proteinas')) || 0,
+            carbs: Number(getValue(m, 'Carboidratos')) || 0,
+            fats: Number(getValue(m, 'Gorduras')) || 0
+          };
+        });
 
       } else {
-        console.log("Nenhuma refeição encontrada.");
+        console.log("Nenhuma refeição encontrada no banco.");
       }
 
       setMeals(activeMeals);

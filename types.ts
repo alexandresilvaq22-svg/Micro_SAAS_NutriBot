@@ -73,4 +73,6 @@ export interface RefeicaoDB {
   Proteinas: number;
   Carboidratos: number;
   Gorduras: number;
+  // Permite acesso dinâmico para resolver problemas de case sensitivity
+  [key: string]: any;
 }
