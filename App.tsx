@@ -7,7 +7,7 @@ import Leaderboard from './components/Leaderboard';
 import PricingTable from './components/PricingTable';
 import EditProfileModal from './components/EditProfileModal';
 import ChatWidget from './components/ChatWidget';
-import { CURRENT_USER, RECENT_MEALS, LEADERBOARD_DATA } from './constants';
+import { CURRENT_USER, LEADERBOARD_DATA } from './constants';
 import { Flame, Beef, Wheat, Droplet, Loader2, Lock, AlertCircle } from 'lucide-react';
 import { UserProfile, MealLog, RefeicaoDB } from './types';
 import { supabase } from './lib/supabase';
