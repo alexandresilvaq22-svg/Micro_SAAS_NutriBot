@@ -12,9 +12,8 @@ interface Message {
   timestamp: Date;
 }
 
-// ⚠️ ATENÇÃO: Substitua esta URL pela URL do seu "Webhook Node" (Production URL) no n8n.
-// O método do Webhook no n8n deve ser POST.
-const N8N_WEBHOOK_URL = 'https://seu-n8n-instancia.com/webhook/SEU_IDENTIFICADOR'; 
+// ⚠️ ATENÇÃO: URL de Produção do n8n conectada
+const N8N_WEBHOOK_URL = 'https://n8n-conectax.ttuggq.easypanel.host/webhook/chat-web'; 
 // Exemplo de URL do Telegram (substitua pelo link do seu bot)
 const TELEGRAM_BOT_URL = 'https://t.me/SeuNutriBot';
 
@@ -80,8 +79,8 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ userId }) => {
                 body: JSON.stringify({
                     userId: userId,
                     message: textToSend,
-                    // Você pode adicionar mais dados de contexto aqui se necessário
-                    source: 'dashboard_web' 
+                    // 'web' é a chave que o nó IF do n8n está esperando para rotear corretamente
+                    source: 'web' 
                 })
             });
 
@@ -209,7 +208,7 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ userId }) => {
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               placeholder="Digite sua dúvida..."
-              className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm text-slate-800 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all"
+              className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 text-sm text-slate-800 focus:outline-none focus:border-emerald-500 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all"
             />
             <button 
               type="submit"
