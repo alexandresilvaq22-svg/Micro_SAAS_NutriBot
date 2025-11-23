@@ -86,10 +86,33 @@ const ChatWidget: React.FC<ChatWidgetProps> = ({ userId }) => {
 
             if (!response.ok) throw new Error('Falha na comunicação com n8n');
 
-            const data = await response.json();
-            
-            // O n8n deve retornar um JSON no formato: { "output": "Texto da resposta" }
-            const botText = data.output || data.text || data.message || "Desculpe, não entendi a resposta do servidor.";
+            let botText = '';
+            const contentType = response.headers.get('content-type');
+
+            // Tenta ler como JSON se o cabeçalho indicar, senão lê como texto puro
+            if (contentType && contentType.includes('application/json')) {
+                try {
+                    const data = await response.json();
+                    // O n8n deve retornar um JSON no formato: { "output": "Texto da resposta" }
+                    botText = data.output || data.text || data.message;
+                    
+                    // Se o JSON vier mas sem os campos esperados, tenta stringify para debug ou usa fallback
+                    if (!botText && typeof data === 'object') {
+                         botText = JSON.stringify(data);
+                    }
+                } catch (err) {
+                    console.warn("Resposta parecia JSON mas falhou ao parsear, tentando texto:", err);
+                    botText = await response.text();
+                }
+            } else {
+                // Resposta em texto puro (comum se o nó 'Respond to Webhook' estiver mandando Text)
+                botText = await response.text();
+            }
+
+            // Fallback final se vier vazio
+            if (!botText) {
+                botText = "Desculpe, recebi uma resposta vazia do servidor.";
+            }
 
             const botResponse: Message = {
                 id: (Date.now() + 1).toString(),
