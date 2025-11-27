@@ -1,5 +1,5 @@
 
-import React, { useMemo, useState, useEffect, Component, type ReactNode, type ErrorInfo } from 'react';
+import React, { useMemo, useState, useEffect, type ReactNode, type ErrorInfo } from 'react';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import MacroCard from './components/MacroCard';
@@ -8,7 +8,7 @@ import Leaderboard from './components/Leaderboard';
 import PricingTable from './components/PricingTable';
 import EditProfileModal from './components/EditProfileModal';
 import ChatWidget from './components/ChatWidget';
-import { CURRENT_USER, LEADERBOARD_DATA } from './constants';
+import { CURRENT_USER } from './constants';
 import { Flame, Beef, Wheat, Droplet, Loader2, Lock, AlertCircle, X } from 'lucide-react';
 import { UserProfile, MealLog, LeaderboardEntry } from './types';
 import { supabase } from './lib/supabase';
@@ -61,7 +61,7 @@ interface ErrorBoundaryState {
 }
 
 // Error Boundary Component to catch runtime errors
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   state: ErrorBoundaryState = { hasError: false, error: null };
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
@@ -111,7 +111,8 @@ const DashboardContent: React.FC = () => {
   // User & Data State
   const [user, setUser] = useState<UserProfile>(CURRENT_USER);
   const [meals, setMeals] = useState<MealLog[]>([]);
-  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>(LEADERBOARD_DATA);
+  // CORREÇÃO: Inicializa vazio para não mostrar dados fake
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   
   // Data de referência para exibição (pode ser hoje ou a data da última refeição)
   const [displayDate, setDisplayDate] = useState<string>(new Date().toLocaleDateString());
@@ -482,7 +483,7 @@ const DashboardContent: React.FC = () => {
       <Header 
         user={user} 
         remainingCalories={remainingCalories} 
-        // @ts-ignore
+        // CORREÇÃO: Passando a função corretamente para abrir o menu mobile
         onMenuClick={() => setIsMobileMenuOpen(true)}
       />
 

@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Bell, Menu, Droplet, Trophy, Info } from 'lucide-react';
 import { UserProfile } from '../types';
@@ -5,6 +6,7 @@ import { UserProfile } from '../types';
 interface HeaderProps {
   user: UserProfile;
   remainingCalories: number;
+  onMenuClick?: () => void; // Added prop definition
 }
 
 interface Notification {
@@ -43,7 +45,7 @@ const INITIAL_NOTIFICATIONS: Notification[] = [
   }
 ];
 
-const Header: React.FC<HeaderProps> = ({ user, remainingCalories }) => {
+const Header: React.FC<HeaderProps> = ({ user, remainingCalories, onMenuClick }) => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>(INITIAL_NOTIFICATIONS);
 
@@ -91,7 +93,10 @@ const Header: React.FC<HeaderProps> = ({ user, remainingCalories }) => {
         
         {/* Logo / Title Area */}
         <div className="flex items-center gap-3 md:gap-6">
-          <button className="lg:hidden p-2 text-slate-500 hover:text-emerald-600">
+          <button 
+            className="lg:hidden p-2 text-slate-500 hover:text-emerald-600"
+            onClick={onMenuClick} // Added click handler
+          >
             <Menu size={24} />
           </button>
           <div className="flex items-center gap-2">
