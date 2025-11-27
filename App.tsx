@@ -1,5 +1,5 @@
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, Component, type ReactNode, type ErrorInfo } from 'react';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import MacroCard from './components/MacroCard';
@@ -9,7 +9,7 @@ import PricingTable from './components/PricingTable';
 import EditProfileModal from './components/EditProfileModal';
 import ChatWidget from './components/ChatWidget';
 import { CURRENT_USER, LEADERBOARD_DATA } from './constants';
-import { Flame, Beef, Wheat, Droplet, Loader2, Lock, AlertCircle } from 'lucide-react';
+import { Flame, Beef, Wheat, Droplet, Loader2, Lock, AlertCircle, X } from 'lucide-react';
 import { UserProfile, MealLog, LeaderboardEntry } from './types';
 import { supabase } from './lib/supabase';
 
@@ -52,7 +52,7 @@ const convertToMealLog = (m: any): MealLog => {
 };
 
 interface ErrorBoundaryProps {
-  children: React.ReactNode;
+  children: ReactNode;
 }
 
 interface ErrorBoundaryState {
@@ -61,17 +61,14 @@ interface ErrorBoundaryState {
 }
 
 // Error Boundary Component to catch runtime errors
-class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  constructor(props: ErrorBoundaryProps) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { hasError: false, error: null };
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("Uncaught error:", error, errorInfo);
   }
 
@@ -109,6 +106,7 @@ const DashboardContent: React.FC = () => {
   // State para controle de acesso via URL
   const [accessStatus, setAccessStatus] = useState<'loading' | 'granted' | 'denied' | 'no_id'>('loading');
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
   // User & Data State
   const [user, setUser] = useState<UserProfile>(CURRENT_USER);
@@ -139,7 +137,7 @@ const DashboardContent: React.FC = () => {
     console.log("Tentando acessar com ID:", parsedId, "(Tipo:", typeof parsedId, ")");
     setCurrentUserId(parsedId.toString());
     fetchUserData(parsedId);
-    fetchLeaderboard(parsedId);
+    // Removemos fetchLeaderboard daqui para chamar somente DEPOIS de descobrir a data correta
   }, []);
 
   // 2. Configura Realtime Subscription para NOVAS Refeições
@@ -232,6 +230,7 @@ const DashboardContent: React.FC = () => {
       }
 
       let activeMeals: MealLog[] = [];
+      let targetDateForLeaderboard = new Date().toISOString().split('T')[0];
       
       if (mealsData && mealsData.length > 0) {
         // LÓGICA DE DATA INTELIGENTE:
@@ -243,7 +242,8 @@ const DashboardContent: React.FC = () => {
         
         // Se a refeição mais recente não é hoje, assumimos que o usuário quer ver o último dia registrado
         const targetDate = mostRecentMealDate === todayStr ? todayStr : mostRecentMealDate;
-        
+        targetDateForLeaderboard = targetDate; // Salva para usar no leaderboard
+
         // Corrige exibição visual da data
         const parts = targetDate.split('-');
         if(parts.length === 3) {
@@ -267,24 +267,28 @@ const DashboardContent: React.FC = () => {
       setMeals(activeMeals);
       setAccessStatus('granted');
 
+      // 3. AGORA buscamos o Leaderboard usando a DATA CORRETA (targetDate)
+      // Se o usuário está vendo dados de 2025, o ranking deve ser de 2025.
+      fetchLeaderboard(userId, targetDateForLeaderboard);
+
     } catch (error) {
       console.error("Erro CRÍTICO no fetchUserData:", error);
       setAccessStatus('denied');
     }
   };
 
-  const fetchLeaderboard = async (currentUserId: string | number) => {
+  const fetchLeaderboard = async (currentUserId: string | number, dateFilter: string) => {
     try {
-        console.log("Buscando dados do Leaderboard...");
+        console.log(`Buscando Leaderboard para a data: ${dateFilter}...`);
         
         // 1. Pegar todos os usuários
         const { data: allUsers, error: usersError } = await supabase
             .from('NutriBot_User')
-            .select('User_ID, Nome, Calorias_alvo');
+            .select('User_ID, Nome, Calorias_alvo, Avatar_URL');
         
         if (usersError) throw usersError;
 
-        // 2. Pegar todas as refeições
+        // 2. Pegar todas as refeições (Não filtra por usuário, pega de geral)
         const { data: allMeals, error: mealsError } = await supabase
             .from('Refeições_NutriBot')
             .select('User_ID, Calorias, Data');
@@ -293,15 +297,13 @@ const DashboardContent: React.FC = () => {
 
         if (!allUsers || !allMeals) return;
 
-        // Agrupar calorias por usuário
-        const todayStr = new Date().toISOString().split('T')[0];
-        
+        // Agrupar calorias por usuário baseada na data do filtro
         const userScores: Record<string, number> = {};
 
         allMeals.forEach((meal: any) => {
             const mDate = getValue(meal, 'Data');
-            // Logica: soma se for a data de hoje para ranking diário
-            if (mDate && mDate.toString().startsWith(todayStr)) {
+            // Logica: soma se for a data do filtro (mesmo que seja 2025)
+            if (mDate && mDate.toString().startsWith(dateFilter)) {
                 const uid = getValue(meal, 'User_ID');
                 const cals = Number(getValue(meal, 'Calorias')) || 0;
                 userScores[uid] = (userScores[uid] || 0) + cals;
@@ -314,22 +316,28 @@ const DashboardContent: React.FC = () => {
             const goal = Number(getValue(u, 'Calorias_alvo')) || 2000;
             const current = userScores[uid] || 0;
             
-            // Score é a porcentagem da meta
-            const score = Math.min(100, Math.round((current / goal) * 100));
+            // SISTEMA DE PONTUAÇÃO (GAMIFICATION)
+            // Score = % da meta * 10 (ex: 100% = 1000 pontos)
+            // Se meta for 0, evita divisão por zero
+            let score = 0;
+            if (goal > 0) {
+                score = Math.round((current / goal) * 1000);
+            }
 
             return {
                 rank: 0, 
                 name: name,
                 score: score, 
                 isUser: uid.toString() === currentUserId.toString(),
-                avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`
+                avatarUrl: getValue(u, 'Avatar_URL') || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`
             };
         });
 
         // Ordenar por score decrescente
         leaderboardData.sort((a, b) => b.score - a.score);
 
-        // Atribuir rank
+        // Atribuir rank e filtrar apenas quem tem pontos (opcional, mas limpa o ranking)
+        // Vamos mostrar todos para incentivar, ou top 10
         const rankedData = leaderboardData.map((entry, index) => ({
             ...entry,
             rank: index + 1
@@ -471,21 +479,21 @@ const DashboardContent: React.FC = () => {
   // DASHBOARD PRINCIPAL
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-      <Header user={user} remainingCalories={remainingCalories} />
+      <Header 
+        user={user} 
+        remainingCalories={remainingCalories} 
+        // @ts-ignore
+        onMenuClick={() => setIsMobileMenuOpen(true)}
+      />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           
-          {/* Left Column: Profile */}
+          {/* Left Column: Profile (Desktop) */}
           <div className="lg:col-span-3 hidden lg:block">
             <div className="sticky top-24 h-[calc(100vh-8rem)]">
               <Sidebar user={user} onEdit={() => setIsEditModalOpen(true)} />
             </div>
-          </div>
-
-          {/* Mobile Profile */}
-          <div className="lg:hidden">
-              <Sidebar user={user} onEdit={() => setIsEditModalOpen(true)} />
           </div>
 
           {/* Main Content Area */}
@@ -575,6 +583,30 @@ const DashboardContent: React.FC = () => {
         user={user} 
         onSave={handleSaveProfile} 
       />
+
+      {/* Mobile Menu Overlay */}
+      {isMobileMenuOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <div 
+            className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
+            onClick={() => setIsMobileMenuOpen(false)}
+          ></div>
+          <div className="absolute top-0 left-0 bottom-0 w-80 bg-white shadow-xl transform transition-transform duration-300 ease-in-out">
+             <div className="h-full overflow-y-auto">
+                <Sidebar user={user} onEdit={() => {
+                    setIsMobileMenuOpen(false);
+                    setIsEditModalOpen(true);
+                }} />
+             </div>
+             <button 
+                onClick={() => setIsMobileMenuOpen(false)}
+                className="absolute top-4 right-4 p-2 bg-white/80 rounded-full shadow-sm text-slate-500 hover:text-slate-800"
+             >
+                <X size={20} />
+             </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
