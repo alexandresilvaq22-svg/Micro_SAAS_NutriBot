@@ -1,5 +1,5 @@
 
-import React, { useMemo, useState, useEffect, type ReactNode, type ErrorInfo } from 'react';
+import React, { Component, useMemo, useState, useEffect, type ReactNode, type ErrorInfo } from 'react';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import MacroCard from './components/MacroCard';
@@ -61,7 +61,7 @@ interface ErrorBoundaryState {
 }
 
 // Error Boundary Component to catch runtime errors
-class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   state: ErrorBoundaryState = { hasError: false, error: null };
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
@@ -111,8 +111,10 @@ const DashboardContent: React.FC = () => {
   // User & Data State
   const [user, setUser] = useState<UserProfile>(CURRENT_USER);
   const [meals, setMeals] = useState<MealLog[]>([]);
-  // CORREÇÃO: Inicializa vazio para não mostrar dados fake
+  
+  // Inicializa vazio para não mostrar dados fake
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [isLeaderboardLoading, setIsLeaderboardLoading] = useState(true);
   
   // Data de referência para exibição (pode ser hoje ou a data da última refeição)
   const [displayDate, setDisplayDate] = useState<string>(new Date().toLocaleDateString());
@@ -184,7 +186,7 @@ const DashboardContent: React.FC = () => {
 
       console.log(`Buscando perfil para User_ID: ${userId}...`);
 
-      // 1. Buscar Perfil no Supabase (NutriBot_User)
+      // 1. Buscar Per Perfil no Supabase (NutriBot_User)
       const { data: profileData, error: profileError } = await supabase
         .from('NutriBot_User')
         .select('*')
@@ -280,6 +282,7 @@ const DashboardContent: React.FC = () => {
 
   const fetchLeaderboard = async (currentUserId: string | number, dateFilter: string) => {
     try {
+        setIsLeaderboardLoading(true);
         console.log(`Buscando Leaderboard para a data: ${dateFilter}...`);
         
         // 1. Pegar todos os usuários
@@ -296,7 +299,10 @@ const DashboardContent: React.FC = () => {
 
         if (mealsError) throw mealsError;
 
-        if (!allUsers || !allMeals) return;
+        if (!allUsers || !allMeals) {
+            setLeaderboard([]);
+            return;
+        }
 
         // Agrupar calorias por usuário baseada na data do filtro
         const userScores: Record<string, number> = {};
@@ -337,8 +343,7 @@ const DashboardContent: React.FC = () => {
         // Ordenar por score decrescente
         leaderboardData.sort((a, b) => b.score - a.score);
 
-        // Atribuir rank e filtrar apenas quem tem pontos (opcional, mas limpa o ranking)
-        // Vamos mostrar todos para incentivar, ou top 10
+        // Atribuir rank
         const rankedData = leaderboardData.map((entry, index) => ({
             ...entry,
             rank: index + 1
@@ -348,6 +353,9 @@ const DashboardContent: React.FC = () => {
 
     } catch (error) {
         console.error("Erro no Leaderboard:", error);
+        setLeaderboard([]);
+    } finally {
+        setIsLeaderboardLoading(false);
     }
   };
 
@@ -562,7 +570,7 @@ const DashboardContent: React.FC = () => {
                 </div>
 
                 <div className="xl:col-span-1 h-full">
-                    <Leaderboard entries={leaderboard} />
+                    <Leaderboard entries={leaderboard} isLoading={isLeaderboardLoading} />
                 </div>
                 </section>
             </div>
