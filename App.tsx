@@ -34,10 +34,17 @@ const convertToMealLog = (m: any): MealLog => {
   // Tenta extrair hora da data se possível, senão usa placeholder
   const dataStr = getValue(m, 'Data') || '';
   let timeStr = 'Recente';
+  // Formato esperado: YYYY-MM-DD HH:mm:ss ou YYYY-MM-DD
+  // Se tiver horário, tentamos extrair. Se for só data, deixamos genérico.
+  // Para exibir na tabela, vamos formatar a data completa se for antiga
   if (dataStr.includes('T')) {
       timeStr = dataStr.split('T')[1].substring(0, 5);
-  } else if (dataStr.includes(' ')) {
+  } else if (dataStr.includes(' ') && dataStr.includes(':')) {
       timeStr = dataStr.split(' ')[1].substring(0, 5);
+  } else {
+      // Se não tem hora, mostra dia/mês
+      const dateParts = dataStr.split('-');
+      if (dateParts.length === 3) timeStr = `${dateParts[2]}/${dateParts[1]}`;
   }
 
   return {
@@ -51,6 +58,11 @@ const convertToMealLog = (m: any): MealLog => {
   };
 };
 
+// Helper para pegar quantos dias tem no mês da data fornecida
+const getDaysInMonth = (year: number, month: number) => {
+  return new Date(year, month, 0).getDate();
+};
+
 interface ErrorBoundaryProps {
   children: ReactNode;
 }
@@ -61,7 +73,7 @@ interface ErrorBoundaryState {
 }
 
 // Error Boundary Component to catch runtime errors
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   state: ErrorBoundaryState = { hasError: false, error: null };
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
@@ -116,8 +128,9 @@ const DashboardContent: React.FC = () => {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [isLeaderboardLoading, setIsLeaderboardLoading] = useState(true);
   
-  // Data de referência para exibição (pode ser hoje ou a data da última refeição)
-  const [displayDate, setDisplayDate] = useState<string>(new Date().toLocaleDateString());
+  // Data de referência para exibição (Mês/Ano)
+  const [displayDate, setDisplayDate] = useState<string>("");
+  const [daysInActiveMonth, setDaysInActiveMonth] = useState<number>(30);
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
@@ -140,7 +153,6 @@ const DashboardContent: React.FC = () => {
     console.log("Tentando acessar com ID:", parsedId, "(Tipo:", typeof parsedId, ")");
     setCurrentUserId(parsedId.toString());
     fetchUserData(parsedId);
-    // Removemos fetchLeaderboard daqui para chamar somente DEPOIS de descobrir a data correta
   }, []);
 
   // 2. Configura Realtime Subscription para NOVAS Refeições
@@ -166,10 +178,9 @@ const DashboardContent: React.FC = () => {
           // Converte o payload bruto em formato da UI
           const newMeal = convertToMealLog(payload.new);
           
-          // Adiciona ao topo da lista
+          // Adiciona ao topo da lista SOMENTE se pertencer ao mês atual que está sendo visto
+          // Simplificação: Adiciona sempre, a menos que tenhamos lógica complexa de filtro de mês no state
           setMeals(prevMeals => [newMeal, ...prevMeals]);
-          
-          // Opcional: Mostrar um toast ou som de notificação aqui
         }
       )
       .subscribe();
@@ -186,7 +197,7 @@ const DashboardContent: React.FC = () => {
 
       console.log(`Buscando perfil para User_ID: ${userId}...`);
 
-      // 1. Buscar Per Perfil no Supabase (NutriBot_User)
+      // 1. Buscar Perfil no Supabase (NutriBot_User)
       const { data: profileData, error: profileError } = await supabase
         .from('NutriBot_User')
         .select('*')
@@ -215,7 +226,6 @@ const DashboardContent: React.FC = () => {
         height: getValue(profileData, 'Altura_cm') || prev.height,
         goalCalories: getValue(profileData, 'Calorias_alvo') || prev.goalCalories,
         goalProtein: getValue(profileData, 'Proteína_alvo') || prev.goalProtein,
-        // Pega a URL do avatar do banco se existir, senão usa placeholder
         avatarUrl: getValue(profileData, 'Avatar_URL') || prev.avatarUrl 
       }));
 
@@ -226,53 +236,54 @@ const DashboardContent: React.FC = () => {
         .select('*')
         .eq('User_ID', userId)
         .order('Data', { ascending: false }) 
-        .limit(50);
+        .limit(100); // Aumentado limite para pegar mês todo se possível
 
       if (mealsError) {
         console.error("Erro Supabase (Refeições):", mealsError.message);
       }
 
       let activeMeals: MealLog[] = [];
-      let targetDateForLeaderboard = new Date().toISOString().split('T')[0];
+      // Default: mês atual
+      const today = new Date();
+      let targetMonthStr = today.toISOString().slice(0, 7); // YYYY-MM
+      let daysCount = getDaysInMonth(today.getFullYear(), today.getMonth() + 1);
       
       if (mealsData && mealsData.length > 0) {
-        // LÓGICA DE DATA INTELIGENTE:
-        const todayStr = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-        
-        // Pega a data mais recente disponível
+        // LÓGICA MENSAL:
+        // Pega a data da refeição mais recente
         const rawDate = getValue(mealsData[0], 'Data');
-        const mostRecentMealDate = typeof rawDate === 'string' ? rawDate.trim().split(' ')[0] : todayStr;
+        const mostRecentMealDate = typeof rawDate === 'string' ? rawDate.trim() : today.toISOString();
         
-        // Se a refeição mais recente não é hoje, assumimos que o usuário quer ver o último dia registrado
-        const targetDate = mostRecentMealDate === todayStr ? todayStr : mostRecentMealDate;
-        targetDateForLeaderboard = targetDate; // Salva para usar no leaderboard
-
-        // Corrige exibição visual da data
-        const parts = targetDate.split('-');
-        if(parts.length === 3) {
-            setDisplayDate(`${parts[2]}/${parts[1]}/${parts[0]}`);
-        } else {
-            setDisplayDate(targetDate);
-        }
+        // Extrai YYYY-MM
+        targetMonthStr = mostRecentMealDate.slice(0, 7);
         
-        // Filtra apenas as refeições desse "Dia Ativo"
+        // Calcula dias no mês para a meta mensal
+        const year = parseInt(targetMonthStr.split('-')[0]);
+        const month = parseInt(targetMonthStr.split('-')[1]);
+        daysCount = getDaysInMonth(year, month);
+        
+        // Formata data para exibição (MM/YYYY)
+        setDisplayDate(`${month.toString().padStart(2, '0')}/${year}`);
+        
+        // Filtra TODAS as refeições daquele MÊS
         const filteredDBMeals = mealsData.filter((m: any) => {
             const mDate = getValue(m, 'Data');
-            return mDate && mDate.toString().startsWith(targetDate);
+            return mDate && mDate.toString().startsWith(targetMonthStr);
         });
 
         activeMeals = filteredDBMeals.map((m: any) => convertToMealLog(m));
 
       } else {
         console.log("Nenhuma refeição encontrada no banco.");
+        setDisplayDate(`${(today.getMonth() + 1).toString().padStart(2, '0')}/${today.getFullYear()}`);
       }
 
+      setDaysInActiveMonth(daysCount);
       setMeals(activeMeals);
       setAccessStatus('granted');
 
-      // 3. AGORA buscamos o Leaderboard usando a DATA CORRETA (targetDate)
-      // Se o usuário está vendo dados de 2025, o ranking deve ser de 2025.
-      fetchLeaderboard(userId, targetDateForLeaderboard);
+      // 3. Busca Leaderboard do MÊS selecionado
+      fetchLeaderboard(userId, targetMonthStr, daysCount);
 
     } catch (error) {
       console.error("Erro CRÍTICO no fetchUserData:", error);
@@ -280,10 +291,10 @@ const DashboardContent: React.FC = () => {
     }
   };
 
-  const fetchLeaderboard = async (currentUserId: string | number, dateFilter: string) => {
+  const fetchLeaderboard = async (currentUserId: string | number, monthFilter: string, daysInMonth: number) => {
     try {
         setIsLeaderboardLoading(true);
-        console.log(`Buscando Leaderboard para a data: ${dateFilter}...`);
+        console.log(`Buscando Leaderboard MENSAL para: ${monthFilter}...`);
         
         // 1. Pegar todos os usuários
         const { data: allUsers, error: usersError } = await supabase
@@ -304,31 +315,35 @@ const DashboardContent: React.FC = () => {
             return;
         }
 
-        // Agrupar calorias por usuário baseada na data do filtro
-        const userScores: Record<string, number> = {};
+        // Agrupar calorias por usuário baseada no MÊS do filtro
+        const userMonthlyCalories: Record<string, number> = {};
 
         allMeals.forEach((meal: any) => {
             const mDate = getValue(meal, 'Data');
-            // Logica: soma se for a data do filtro (mesmo que seja 2025)
-            if (mDate && mDate.toString().startsWith(dateFilter)) {
+            // Logica: soma se for o MÊS do filtro (ex: 2025-10)
+            if (mDate && mDate.toString().startsWith(monthFilter)) {
                 const uid = getValue(meal, 'User_ID');
                 const cals = Number(getValue(meal, 'Calorias')) || 0;
-                userScores[uid] = (userScores[uid] || 0) + cals;
+                userMonthlyCalories[uid] = (userMonthlyCalories[uid] || 0) + cals;
             }
         });
 
         const leaderboardData: LeaderboardEntry[] = allUsers.map((u: any) => {
             const uid = getValue(u, 'User_ID');
             const name = getValue(u, 'Nome') || 'Usuário';
-            const goal = Number(getValue(u, 'Calorias_alvo')) || 2000;
-            const current = userScores[uid] || 0;
             
-            // SISTEMA DE PONTUAÇÃO (GAMIFICATION)
-            // Score = % da meta * 10 (ex: 100% = 1000 pontos)
-            // Se meta for 0, evita divisão por zero
+            // Meta Diária
+            const dailyGoal = Number(getValue(u, 'Calorias_alvo')) || 2000;
+            // Meta Mensal = Meta Diária * Dias no Mês
+            const monthlyGoal = dailyGoal * daysInMonth;
+            
+            const currentMonthlyTotal = userMonthlyCalories[uid] || 0;
+            
+            // SISTEMA DE PONTUAÇÃO (GAMIFICATION) MENSAL
+            // Score = (Consumo Mensal / Meta Mensal) * 1000
             let score = 0;
-            if (goal > 0) {
-                score = Math.round((current / goal) * 1000);
+            if (monthlyGoal > 0) {
+                score = Math.round((currentMonthlyTotal / monthlyGoal) * 1000);
             }
 
             return {
@@ -359,7 +374,7 @@ const DashboardContent: React.FC = () => {
     }
   };
 
-  // Calculate total consumed macros based on ACTIVE meals
+  // Calcula totais baseados nas refeições ativas (que já foram filtradas por mês)
   const totals = useMemo(() => {
     return meals.reduce(
       (acc, meal) => ({
@@ -372,7 +387,15 @@ const DashboardContent: React.FC = () => {
     );
   }, [meals]);
 
-  const remainingCalories = Math.max(0, user.goalCalories - totals.calories);
+  // Metas Mensais (Meta Diária * Dias no Mês)
+  const monthlyGoals = {
+      calories: user.goalCalories * daysInActiveMonth,
+      protein: user.goalProtein * daysInActiveMonth,
+      carbs: 300 * daysInActiveMonth, // Exemplo fixo
+      fats: 70 * daysInActiveMonth    // Exemplo fixo
+  };
+
+  const remainingCalories = Math.max(0, monthlyGoals.calories - totals.calories);
 
   const handleSaveProfile = async (updatedUser: UserProfile) => {
     // 1. Atualiza estado local instantaneamente
@@ -383,7 +406,6 @@ const DashboardContent: React.FC = () => {
     try {
         console.log("Tentando salvar perfil completo (incluindo imagem)...");
         
-        // Objeto com todos os dados
         const fullUpdateData = {
             Nome: updatedUser.name,
             Idade: updatedUser.age,
@@ -394,7 +416,6 @@ const DashboardContent: React.FC = () => {
             Avatar_URL: updatedUser.avatarUrl 
         };
 
-        // 2. Tenta atualizar tudo
         const { error } = await supabase
             .from('NutriBot_User')
             .update(fullUpdateData)
@@ -402,8 +423,6 @@ const DashboardContent: React.FC = () => {
 
         if (error) {
             console.warn("Erro ao salvar perfil completo. Tentando salvar sem a imagem...", error.message);
-            
-            // 3. Se falhar (provavelmente imagem muito grande), tenta salvar sem a imagem
             const { error: retryError } = await supabase
                 .from('NutriBot_User')
                 .update({
@@ -413,7 +432,6 @@ const DashboardContent: React.FC = () => {
                     Altura_cm: updatedUser.height,
                     Calorias_alvo: updatedUser.goalCalories,
                     "Proteína_alvo": updatedUser.goalProtein,
-                    // Avatar_URL removido
                 })
                 .eq('User_ID', currentUserId);
 
@@ -433,7 +451,6 @@ const DashboardContent: React.FC = () => {
     }
   };
 
-  // TELAS DE ESTADO
   if (accessStatus === 'loading') {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 gap-4">
@@ -485,36 +502,31 @@ const DashboardContent: React.FC = () => {
     );
   }
 
-  // DASHBOARD PRINCIPAL
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
       <Header 
         user={user} 
         remainingCalories={remainingCalories} 
-        // CORREÇÃO: Passando a função corretamente para abrir o menu mobile
         onMenuClick={() => setIsMobileMenuOpen(true)}
       />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           
-          {/* Left Column: Profile (Desktop) */}
           <div className="lg:col-span-3 hidden lg:block">
             <div className="sticky top-24 h-[calc(100vh-8rem)]">
               <Sidebar user={user} onEdit={() => setIsEditModalOpen(true)} />
             </div>
           </div>
 
-          {/* Main Content Area */}
           <div className="lg:col-span-9 space-y-12">
             
             <div className="space-y-6">
-                {/* Section 1: Daily Goals */}
                 <section>
                 <div className="flex justify-between items-end mb-4">
-                    <h2 className="text-xl font-bold text-slate-800">Metas Diárias</h2>
-                    <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-100">
-                        Visualizando: {displayDate}
+                    <h2 className="text-xl font-bold text-slate-800">Metas Mensais</h2>
+                    <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-100 uppercase">
+                        Mês: {displayDate}
                     </span>
                 </div>
                 
@@ -523,7 +535,7 @@ const DashboardContent: React.FC = () => {
                     data={{
                         name: 'Calorias',
                         current: totals.calories,
-                        target: user.goalCalories,
+                        target: monthlyGoals.calories,
                         unit: 'kcal',
                         color: '#10b981', 
                     }}
@@ -533,7 +545,7 @@ const DashboardContent: React.FC = () => {
                     data={{
                         name: 'Proteínas',
                         current: totals.protein,
-                        target: user.goalProtein,
+                        target: monthlyGoals.protein,
                         unit: 'g',
                         color: '#84cc16', 
                     }}
@@ -543,7 +555,7 @@ const DashboardContent: React.FC = () => {
                     data={{
                         name: 'Carboidratos',
                         current: totals.carbs,
-                        target: 300, 
+                        target: monthlyGoals.carbs, 
                         unit: 'g',
                         color: '#f59e0b', 
                     }}
@@ -553,7 +565,7 @@ const DashboardContent: React.FC = () => {
                     data={{
                         name: 'Gorduras',
                         current: totals.fats,
-                        target: 70, 
+                        target: monthlyGoals.fats, 
                         unit: 'g',
                         color: '#f43f5e', 
                     }}
@@ -562,7 +574,6 @@ const DashboardContent: React.FC = () => {
                 </div>
                 </section>
 
-                {/* Section 2: Meal Log & Leaderboard */}
                 <section className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                 
                 <div className="xl:col-span-2 h-full">
@@ -575,7 +586,6 @@ const DashboardContent: React.FC = () => {
                 </section>
             </div>
 
-            {/* Section 3: Pricing Table */}
             <div className="pt-8 border-t border-slate-200">
                 <PricingTable />
             </div>
@@ -593,7 +603,6 @@ const DashboardContent: React.FC = () => {
         onSave={handleSaveProfile} 
       />
 
-      {/* Mobile Menu Overlay */}
       {isMobileMenuOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div 
