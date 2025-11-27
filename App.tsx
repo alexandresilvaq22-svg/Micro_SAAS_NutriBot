@@ -9,7 +9,7 @@ import PricingTable from './components/PricingTable';
 import EditProfileModal from './components/EditProfileModal';
 import ChatWidget from './components/ChatWidget';
 import { CURRENT_USER } from './constants';
-import { Flame, Beef, Wheat, Droplet, Loader2, Lock, AlertCircle, X } from 'lucide-react';
+import { Flame, Beef, Wheat, Droplet, Loader2, Lock, X } from 'lucide-react';
 import { UserProfile, MealLog, LeaderboardEntry } from './types';
 import { supabase } from './lib/supabase';
 
@@ -67,7 +67,7 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   state: ErrorBoundaryState = { hasError: false, error: null };
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
@@ -163,7 +163,7 @@ const DashboardContent: React.FC = () => {
       setAccessStatus('loading');
 
       // 1. Buscar Perfil
-      const { data: profileData, error: profileError } = await supabase
+      const { data: profileData } = await supabase
         .from('NutriBot_User')
         .select('*')
         .eq('User_ID', userId)
@@ -188,7 +188,7 @@ const DashboardContent: React.FC = () => {
       }
 
       // 2. Buscar Refeições
-      const { data: mealsData, error: mealsError } = await supabase
+      const { data: mealsData } = await supabase
         .from('Refeições_NutriBot')
         .select('*')
         .eq('User_ID', userId)
