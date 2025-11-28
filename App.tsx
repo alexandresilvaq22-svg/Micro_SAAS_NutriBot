@@ -1,5 +1,4 @@
-
-import React, { Component, useMemo, useState, useEffect, type ReactNode, type ErrorInfo } from 'react';
+import React, { useMemo, useState, useEffect, type ReactNode, type ErrorInfo } from 'react';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import MacroCard from './components/MacroCard';
@@ -28,26 +27,19 @@ const convertToMealLog = (m: any): MealLog => {
   const nomeDB = getValue(m, 'Nome');
   let descDB = getValue(m, 'Descrição_da_refeição') || getValue(m, 'Descricao_da_refeicao'); 
   
-  // Lógica para limpar JSON cru que vem da automação (ex: ```json ... ```)
+  // Lógica para limpar JSON cru que vem da automação
   if (descDB && typeof descDB === 'string') {
-    // Remove blocos de código markdown
     let cleanDesc = descDB.replace(/```json/g, '').replace(/```/g, '').trim();
-    
-    // Tenta parsear se parecer um objeto/array JSON
     if (cleanDesc.startsWith('{') || cleanDesc.startsWith('[')) {
         try {
             const parsed = JSON.parse(cleanDesc);
-            // Se for a estrutura da automação com "components"
             if (parsed.components && Array.isArray(parsed.components)) {
                 cleanDesc = parsed.components.map((c: any) => c.name).join(', ');
-            } 
-            // Se for um array direto
-            else if (Array.isArray(parsed)) {
+            } else if (Array.isArray(parsed)) {
                 cleanDesc = parsed.map((c: any) => c.name || c.item).join(', ');
             }
             descDB = cleanDesc;
         } catch (e) {
-            // Se falhar o parse, mantém o texto limpo ou trunca se for muito longo
             if (cleanDesc.length > 100) descDB = "Refeição Detalhada";
             else descDB = cleanDesc;
         }
@@ -59,13 +51,20 @@ const convertToMealLog = (m: any): MealLog => {
   const dataStr = getValue(m, 'Data') || '';
   let timeStr = 'Recente';
   
-  if (dataStr.includes('T')) {
-      timeStr = dataStr.split('T')[1].substring(0, 5);
-  } else if (dataStr.includes(' ') && dataStr.includes(':')) {
-      timeStr = dataStr.split(' ')[1].substring(0, 5);
-  } else {
-      const dateParts = dataStr.split('-');
-      if (dateParts.length === 3) timeStr = `${dateParts[2]}/${dateParts[1]}`;
+  // Formata a data para mostrar Dia/Mês e Hora
+  try {
+      const d = new Date(dataStr);
+      if (!isNaN(d.getTime())) {
+          const day = String(d.getDate()).padStart(2, '0');
+          const month = String(d.getMonth() + 1).padStart(2, '0');
+          const hours = String(d.getHours()).padStart(2, '0');
+          const minutes = String(d.getMinutes()).padStart(2, '0');
+          timeStr = `${day}/${month} - ${hours}:${minutes}`;
+      } else {
+          timeStr = dataStr;
+      }
+  } catch (e) {
+      timeStr = dataStr;
   }
 
   return {
@@ -81,7 +80,6 @@ const convertToMealLog = (m: any): MealLog => {
 
 // Helper para pegar quantos dias tem no mês
 const getDaysInMonth = (year: number, month: number) => {
-  // month é 1-based aqui para o Date (0 é dia anterior ao primeiro do mês seguinte)
   return new Date(year, month, 0).getDate();
 };
 
@@ -94,7 +92,7 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   state: ErrorBoundaryState = { hasError: false, error: null };
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
@@ -138,7 +136,6 @@ const DashboardContent: React.FC = () => {
   const [isLeaderboardLoading, setIsLeaderboardLoading] = useState(true);
   
   const [displayDate, setDisplayDate] = useState<string>("");
-  // Estado para guardar o ano e mês ativo para cálculos (ex: [2025, 11])
   const [activePeriod, setActivePeriod] = useState<[number, number]>([new Date().getFullYear(), new Date().getMonth() + 1]);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
@@ -176,7 +173,6 @@ const DashboardContent: React.FC = () => {
         },
         (payload) => {
           const newMeal = convertToMealLog(payload.new);
-          // Adiciona ao topo evitando duplicatas por ID
           setMeals(prevMeals => {
             if (prevMeals.some(m => m.id === newMeal.id)) {
                 return prevMeals;
@@ -231,27 +227,22 @@ const DashboardContent: React.FC = () => {
 
       let activeMeals: MealLog[] = [];
       const today = new Date();
-      // Data completa (YYYY-MM-DD)
       let targetDateStr = today.toISOString().split('T')[0]; 
       
       if (mealsData && mealsData.length > 0) {
-        // Pega a data da refeição mais recente para ser o "Dia/Mês Ativo"
+        // Pega a data da refeição mais recente para definir o mês ativo
         const rawDate = getValue(mealsData[0], 'Data');
         const mostRecentMealDate = typeof rawDate === 'string' ? rawDate.trim().split(' ')[0] : targetDateStr;
-        
         targetDateStr = mostRecentMealDate;
       }
       
-      // Define o Mês Alvo (YYYY-MM)
       const targetMonthStr = targetDateStr.slice(0, 7); 
       const [y, m] = targetMonthStr.split('-');
       
-      // Atualiza visualização para Mês/Ano
       setDisplayDate(`${m}/${y}`);
       setActivePeriod([parseInt(y), parseInt(m)]);
 
       if (mealsData) {
-        // Filtra APENAS as refeições do MÊS ativo
         const filteredDBMeals = mealsData.filter((m: any) => {
             const mDate = getValue(m, 'Data');
             return mDate && mDate.toString().startsWith(targetMonthStr);
@@ -294,7 +285,6 @@ const DashboardContent: React.FC = () => {
 
         allMeals.forEach((meal: any) => {
             const mDate = getValue(meal, 'Data');
-            // Soma se for o MÊS do filtro (acumulativo)
             if (mDate && mDate.toString().startsWith(monthFilter)) {
                 const uid = getValue(meal, 'User_ID');
                 const cals = Number(getValue(meal, 'Calorias')) || 0;
@@ -307,13 +297,11 @@ const DashboardContent: React.FC = () => {
             const name = getValue(u, 'Nome') || 'Usuário';
             const dailyGoal = Number(getValue(u, 'Calorias_alvo')) || 2000;
             
-            // Score baseado no mês inteiro (Meta Diária * Dias)
             const monthlyGoal = dailyGoal * daysInMonth;
             const currentMonthlyTotal = userMonthlyCalories[uid] || 0;
             
             let score = 0;
             if (monthlyGoal > 0) {
-                // Pontuação gamificada baseada na % do mês
                 score = Math.round((currentMonthlyTotal / monthlyGoal) * 1000);
             }
 
@@ -341,7 +329,6 @@ const DashboardContent: React.FC = () => {
     }
   };
 
-  // Totais do MÊS (baseado na lista 'meals' filtrada por mês)
   const totals = useMemo(() => {
     return meals.reduce(
       (acc, meal) => ({
@@ -354,18 +341,15 @@ const DashboardContent: React.FC = () => {
     );
   }, [meals]);
 
-  // Metas MENSAIS
   const monthlyGoals = useMemo(() => {
       const calsDay = user.goalCalories || 2000;
       const protDay = user.goalProtein || 150;
       
       const daysInMonth = getDaysInMonth(activePeriod[0], activePeriod[1]);
       
-      // Multiplica pelo número de dias do mês
       const totalCals = calsDay * daysInMonth;
       const totalProt = protDay * daysInMonth;
       
-      // Cálculo de Macros Mensal
       const proteinCals = totalProt * 4;
       const fatCals = totalCals * 0.30;
       const fatGrams = Math.round(fatCals / 9);

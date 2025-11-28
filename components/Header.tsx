@@ -118,7 +118,7 @@ const Header: React.FC<HeaderProps> = ({ user, remainingCalories, onMenuClick })
             <span>{user.name.split(' ')[0]}</span>
             <span>! Você está a apenas </span>
             <strong>{remainingCalories} kcal</strong>
-            <span> da sua meta diária!</span>
+            <span> da sua meta mensal!</span>
           </div>
         </div>
 
@@ -228,7 +228,7 @@ const Header: React.FC<HeaderProps> = ({ user, remainingCalories, onMenuClick })
          <div className="bg-emerald-50 border border-emerald-100 text-emerald-800 p-3 rounded-lg text-xs font-medium text-center">
             <span>Parabéns, {user.name.split(' ')[0]}! Faltam </span>
             <strong>{remainingCalories} kcal</strong>
-            <span> para sua meta!</span>
+            <span> para sua meta mensal!</span>
           </div>
       </div>
     </header>

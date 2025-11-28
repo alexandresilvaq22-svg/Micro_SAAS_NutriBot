@@ -27,7 +27,7 @@ const MealTable: React.FC<MealTableProps> = ({ meals }) => {
         <table className="w-full text-left text-sm text-slate-600">
           <thead className="bg-slate-50 text-xs uppercase text-slate-500 font-semibold">
             <tr>
-              <th className="px-6 py-4 rounded-tl-lg">Data</th>
+              <th className="px-6 py-4 rounded-tl-lg">Data/Hora</th>
               <th className="px-6 py-4">Refeição</th>
               <th className="px-6 py-4 text-right">Calorias</th>
               <th className="px-6 py-4 text-right text-emerald-600">P</th>
@@ -38,7 +38,7 @@ const MealTable: React.FC<MealTableProps> = ({ meals }) => {
           <tbody className="divide-y divide-slate-100">
             {meals.map((meal) => (
               <tr key={meal.id} className="hover:bg-slate-50 transition-colors">
-                <td className="px-6 py-4 font-medium text-slate-400">{meal.time}</td>
+                <td className="px-6 py-4 font-medium text-slate-400 whitespace-nowrap">{meal.time}</td>
                 <td className="px-6 py-4 font-semibold text-slate-800">{meal.name}</td>
                 <td className="px-6 py-4 text-right font-bold">{meal.calories} kcal</td>
                 <td className="px-6 py-4 text-right">{meal.protein}g</td>
