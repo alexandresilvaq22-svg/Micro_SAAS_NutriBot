@@ -26,8 +26,34 @@ const getValue = (obj: any, key: string) => {
 // Helper para converter payload do banco em objeto MealLog da UI
 const convertToMealLog = (m: any): MealLog => {
   const nomeDB = getValue(m, 'Nome');
-  const descDB = getValue(m, 'Descrição_da_refeição') || getValue(m, 'Descricao_da_refeicao'); 
+  let descDB = getValue(m, 'Descrição_da_refeição') || getValue(m, 'Descricao_da_refeicao'); 
   
+  // Lógica para limpar JSON cru que vem da automação (ex: ```json ... ```)
+  if (descDB && typeof descDB === 'string') {
+    // Remove blocos de código markdown
+    let cleanDesc = descDB.replace(/```json/g, '').replace(/```/g, '').trim();
+    
+    // Tenta parsear se parecer um objeto/array JSON
+    if (cleanDesc.startsWith('{') || cleanDesc.startsWith('[')) {
+        try {
+            const parsed = JSON.parse(cleanDesc);
+            // Se for a estrutura da automação com "components"
+            if (parsed.components && Array.isArray(parsed.components)) {
+                cleanDesc = parsed.components.map((c: any) => c.name).join(', ');
+            } 
+            // Se for um array direto
+            else if (Array.isArray(parsed)) {
+                cleanDesc = parsed.map((c: any) => c.name || c.item).join(', ');
+            }
+            descDB = cleanDesc;
+        } catch (e) {
+            // Se falhar o parse, mantém o texto limpo ou trunca se for muito longo
+            if (cleanDesc.length > 100) descDB = "Refeição Detalhada";
+            else descDB = cleanDesc;
+        }
+    }
+  }
+
   const nomeFinal = (nomeDB && nomeDB !== 'EMPTY') ? nomeDB : (descDB || 'Refeição Sem Nome');
   
   const dataStr = getValue(m, 'Data') || '';
@@ -67,7 +93,7 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   state: ErrorBoundaryState = { hasError: false, error: null };
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
@@ -147,8 +173,13 @@ const DashboardContent: React.FC = () => {
         },
         (payload) => {
           const newMeal = convertToMealLog(payload.new);
-          // Adiciona ao topo. Num cenário ideal, verificaríamos a data.
-          setMeals(prevMeals => [newMeal, ...prevMeals]);
+          // Adiciona ao topo evitando duplicatas por ID
+          setMeals(prevMeals => {
+            if (prevMeals.some(m => m.id === newMeal.id)) {
+                return prevMeals;
+            }
+            return [newMeal, ...prevMeals];
+          });
         }
       )
       .subscribe();
