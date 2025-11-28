@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { MealLog } from '../types';
 import { ChevronRight, Utensils } from 'lucide-react';
@@ -15,7 +16,7 @@ const MealTable: React.FC<MealTableProps> = ({ meals }) => {
                 <Utensils size={20} className="text-emerald-500" />
                 Registros de Refeições
             </h2>
-            <p className="text-xs text-slate-500 mt-1">Últimos registros de hoje</p>
+            <p className="text-xs text-slate-500 mt-1">Registros deste mês</p>
         </div>
         <button className="text-sm text-emerald-600 font-medium hover:text-emerald-700 flex items-center gap-1 transition-colors">
           Ver Todos <ChevronRight size={16} />
@@ -26,7 +27,7 @@ const MealTable: React.FC<MealTableProps> = ({ meals }) => {
         <table className="w-full text-left text-sm text-slate-600">
           <thead className="bg-slate-50 text-xs uppercase text-slate-500 font-semibold">
             <tr>
-              <th className="px-6 py-4 rounded-tl-lg">Horário</th>
+              <th className="px-6 py-4 rounded-tl-lg">Data</th>
               <th className="px-6 py-4">Refeição</th>
               <th className="px-6 py-4 text-right">Calorias</th>
               <th className="px-6 py-4 text-right text-emerald-600">P</th>
@@ -50,7 +51,7 @@ const MealTable: React.FC<MealTableProps> = ({ meals }) => {
       </div>
       {meals.length === 0 && (
           <div className="p-8 text-center text-slate-400">
-              Nenhuma refeição registrada hoje.
+              Nenhuma refeição registrada neste mês.
           </div>
       )}
     </div>

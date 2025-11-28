@@ -81,6 +81,7 @@ const convertToMealLog = (m: any): MealLog => {
 
 // Helper para pegar quantos dias tem no mês
 const getDaysInMonth = (year: number, month: number) => {
+  // month é 1-based aqui para o Date (0 é dia anterior ao primeiro do mês seguinte)
   return new Date(year, month, 0).getDate();
 };
 
@@ -137,6 +138,8 @@ const DashboardContent: React.FC = () => {
   const [isLeaderboardLoading, setIsLeaderboardLoading] = useState(true);
   
   const [displayDate, setDisplayDate] = useState<string>("");
+  // Estado para guardar o ano e mês ativo para cálculos (ex: [2025, 11])
+  const [activePeriod, setActivePeriod] = useState<[number, number]>([new Date().getFullYear(), new Date().getMonth() + 1]);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   useEffect(() => {
@@ -228,40 +231,40 @@ const DashboardContent: React.FC = () => {
 
       let activeMeals: MealLog[] = [];
       const today = new Date();
-      // Data completa para exibição no dashboard diário (YYYY-MM-DD)
+      // Data completa (YYYY-MM-DD)
       let targetDateStr = today.toISOString().split('T')[0]; 
-      // Mês para o ranking (YYYY-MM)
-      let targetMonthStr = targetDateStr.slice(0, 7); 
       
       if (mealsData && mealsData.length > 0) {
-        // Pega a data da refeição mais recente para ser o "Dia Ativo"
+        // Pega a data da refeição mais recente para ser o "Dia/Mês Ativo"
         const rawDate = getValue(mealsData[0], 'Data');
         const mostRecentMealDate = typeof rawDate === 'string' ? rawDate.trim().split(' ')[0] : targetDateStr;
         
         targetDateStr = mostRecentMealDate;
-        targetMonthStr = targetDateStr.slice(0, 7);
-        
-        // Formata data para exibição (DD/MM/YYYY)
-        const [y, m, d] = targetDateStr.split('-');
-        setDisplayDate(`${d}/${m}/${y}`);
-        
-        // Filtra APENAS as refeições do DIA ativo para o Dashboard
+      }
+      
+      // Define o Mês Alvo (YYYY-MM)
+      const targetMonthStr = targetDateStr.slice(0, 7); 
+      const [y, m] = targetMonthStr.split('-');
+      
+      // Atualiza visualização para Mês/Ano
+      setDisplayDate(`${m}/${y}`);
+      setActivePeriod([parseInt(y), parseInt(m)]);
+
+      if (mealsData) {
+        // Filtra APENAS as refeições do MÊS ativo
         const filteredDBMeals = mealsData.filter((m: any) => {
             const mDate = getValue(m, 'Data');
-            return mDate && mDate.toString().startsWith(targetDateStr);
+            return mDate && mDate.toString().startsWith(targetMonthStr);
         });
 
         activeMeals = filteredDBMeals.map((m: any) => convertToMealLog(m));
-      } else {
-        setDisplayDate(today.toLocaleDateString('pt-BR'));
       }
 
       setMeals(activeMeals);
       setAccessStatus('granted');
 
-      // 3. Busca Leaderboard do MÊS (Ranking Acumulado)
-      // Passamos o targetMonthStr (ex: 2025-11) para filtrar o mês todo no ranking
-      const daysCount = getDaysInMonth(parseInt(targetMonthStr.split('-')[0]), parseInt(targetMonthStr.split('-')[1]));
+      // 3. Busca Leaderboard do MÊS
+      const daysCount = getDaysInMonth(parseInt(y), parseInt(m));
       fetchLeaderboard(userId, targetMonthStr, daysCount);
 
     } catch (error) {
@@ -304,12 +307,13 @@ const DashboardContent: React.FC = () => {
             const name = getValue(u, 'Nome') || 'Usuário';
             const dailyGoal = Number(getValue(u, 'Calorias_alvo')) || 2000;
             
-            // Score baseado no mês inteiro
+            // Score baseado no mês inteiro (Meta Diária * Dias)
             const monthlyGoal = dailyGoal * daysInMonth;
             const currentMonthlyTotal = userMonthlyCalories[uid] || 0;
             
             let score = 0;
             if (monthlyGoal > 0) {
+                // Pontuação gamificada baseada na % do mês
                 score = Math.round((currentMonthlyTotal / monthlyGoal) * 1000);
             }
 
@@ -337,7 +341,7 @@ const DashboardContent: React.FC = () => {
     }
   };
 
-  // Totais do DIA (baseado na lista 'meals' filtrada por dia)
+  // Totais do MÊS (baseado na lista 'meals' filtrada por mês)
   const totals = useMemo(() => {
     return meals.reduce(
       (acc, meal) => ({
@@ -350,30 +354,32 @@ const DashboardContent: React.FC = () => {
     );
   }, [meals]);
 
-  // Metas Diárias (Valores diretos do usuário) e Cálculo de Macros
-  const dailyGoals = useMemo(() => {
-      const cals = user.goalCalories || 2000;
-      const prot = user.goalProtein || 150;
+  // Metas MENSAIS
+  const monthlyGoals = useMemo(() => {
+      const calsDay = user.goalCalories || 2000;
+      const protDay = user.goalProtein || 150;
       
-      // Cálculo Inteligente de Macros:
-      // Proteína: Fixa (1g = 4kcal)
-      // Gordura: 30% das calorias (1g = 9kcal)
-      // Carbo: O resto das calorias (1g = 4kcal)
+      const daysInMonth = getDaysInMonth(activePeriod[0], activePeriod[1]);
       
-      const proteinCals = prot * 4;
-      const fatCals = cals * 0.30;
+      // Multiplica pelo número de dias do mês
+      const totalCals = calsDay * daysInMonth;
+      const totalProt = protDay * daysInMonth;
+      
+      // Cálculo de Macros Mensal
+      const proteinCals = totalProt * 4;
+      const fatCals = totalCals * 0.30;
       const fatGrams = Math.round(fatCals / 9);
       
-      const remainingCals = cals - proteinCals - fatCals;
+      const remainingCals = totalCals - proteinCals - fatCals;
       const carbGrams = Math.max(0, Math.round(remainingCals / 4));
 
       return {
-          calories: cals,
-          protein: prot,
+          calories: totalCals,
+          protein: totalProt,
           carbs: carbGrams,
           fats: fatGrams
       };
-  }, [user.goalCalories, user.goalProtein]);
+  }, [user.goalCalories, user.goalProtein, activePeriod]);
 
   const handleSaveProfile = async (updatedUser: UserProfile) => {
     setUser(updatedUser);
@@ -440,7 +446,7 @@ const DashboardContent: React.FC = () => {
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
       <Header 
         user={user} 
-        remainingCalories={Math.max(0, dailyGoals.calories - totals.calories)} 
+        remainingCalories={Math.max(0, monthlyGoals.calories - totals.calories)} 
         onMenuClick={() => setIsMobileMenuOpen(true)}
       />
 
@@ -456,9 +462,9 @@ const DashboardContent: React.FC = () => {
             <div className="space-y-6">
                 <section>
                 <div className="flex justify-between items-end mb-4">
-                    <h2 className="text-xl font-bold text-slate-800">Metas Diárias</h2>
+                    <h2 className="text-xl font-bold text-slate-800">Metas Mensais</h2>
                     <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-100 uppercase">
-                        Dia: {displayDate}
+                        Mês: {displayDate}
                     </span>
                 </div>
                 
@@ -467,7 +473,7 @@ const DashboardContent: React.FC = () => {
                     data={{
                         name: 'Calorias',
                         current: totals.calories,
-                        target: dailyGoals.calories,
+                        target: monthlyGoals.calories,
                         unit: 'kcal',
                         color: '#10b981', 
                     }}
@@ -477,7 +483,7 @@ const DashboardContent: React.FC = () => {
                     data={{
                         name: 'Proteínas',
                         current: totals.protein,
-                        target: dailyGoals.protein,
+                        target: monthlyGoals.protein,
                         unit: 'g',
                         color: '#84cc16', 
                     }}
@@ -487,7 +493,7 @@ const DashboardContent: React.FC = () => {
                     data={{
                         name: 'Carboidratos',
                         current: totals.carbs,
-                        target: dailyGoals.carbs, 
+                        target: monthlyGoals.carbs, 
                         unit: 'g',
                         color: '#f59e0b', 
                     }}
@@ -497,7 +503,7 @@ const DashboardContent: React.FC = () => {
                     data={{
                         name: 'Gorduras',
                         current: totals.fats,
-                        target: dailyGoals.fats, 
+                        target: monthlyGoals.fats, 
                         unit: 'g',
                         color: '#f43f5e', 
                     }}
