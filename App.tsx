@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState, useEffect, type ReactNode, type ErrorInfo } from 'react';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
@@ -59,6 +60,7 @@ const convertToMealLog = (m: any): MealLog => {
           const month = String(d.getMonth() + 1).padStart(2, '0');
           const hours = String(d.getHours()).padStart(2, '0');
           const minutes = String(d.getMinutes()).padStart(2, '0');
+          // Ex: 22/11 - 14:30
           timeStr = `${day}/${month} - ${hours}:${minutes}`;
       } else {
           timeStr = dataStr;
@@ -136,7 +138,6 @@ const DashboardContent: React.FC = () => {
   const [isLeaderboardLoading, setIsLeaderboardLoading] = useState(true);
   
   const [displayDate, setDisplayDate] = useState<string>("");
-  const [activePeriod, setActivePeriod] = useState<[number, number]>([new Date().getFullYear(), new Date().getMonth() + 1]);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   useEffect(() => {
@@ -227,25 +228,24 @@ const DashboardContent: React.FC = () => {
 
       let activeMeals: MealLog[] = [];
       const today = new Date();
-      let targetDateStr = today.toISOString().split('T')[0]; 
+      let targetDateStr = today.toISOString().split('T')[0]; // YYYY-MM-DD
       
       if (mealsData && mealsData.length > 0) {
-        // Pega a data da refeição mais recente para definir o mês ativo
+        // Pega a data da refeição mais recente para definir o dia ativo
         const rawDate = getValue(mealsData[0], 'Data');
         const mostRecentMealDate = typeof rawDate === 'string' ? rawDate.trim().split(' ')[0] : targetDateStr;
         targetDateStr = mostRecentMealDate;
       }
       
-      const targetMonthStr = targetDateStr.slice(0, 7); 
-      const [y, m] = targetMonthStr.split('-');
-      
-      setDisplayDate(`${m}/${y}`);
-      setActivePeriod([parseInt(y), parseInt(m)]);
+      // Formata para exibição (DD/MM/YYYY)
+      const [y, m, d] = targetDateStr.split('-');
+      setDisplayDate(`${d}/${m}/${y}`);
 
+      // Filtra refeições APENAS DO DIA ESPECÍFICO
       if (mealsData) {
         const filteredDBMeals = mealsData.filter((m: any) => {
             const mDate = getValue(m, 'Data');
-            return mDate && mDate.toString().startsWith(targetMonthStr);
+            return mDate && mDate.toString().startsWith(targetDateStr);
         });
 
         activeMeals = filteredDBMeals.map((m: any) => convertToMealLog(m));
@@ -254,7 +254,8 @@ const DashboardContent: React.FC = () => {
       setMeals(activeMeals);
       setAccessStatus('granted');
 
-      // 3. Busca Leaderboard do MÊS
+      // 3. Busca Leaderboard MENSAL (Competição Acumulativa)
+      const targetMonthStr = targetDateStr.slice(0, 7); // YYYY-MM
       const daysCount = getDaysInMonth(parseInt(y), parseInt(m));
       fetchLeaderboard(userId, targetMonthStr, daysCount);
 
@@ -281,6 +282,7 @@ const DashboardContent: React.FC = () => {
             return;
         }
 
+        // Soma calorias do MÊS inteiro para o ranking
         const userMonthlyCalories: Record<string, number> = {};
 
         allMeals.forEach((meal: any) => {
@@ -300,6 +302,7 @@ const DashboardContent: React.FC = () => {
             const monthlyGoal = dailyGoal * daysInMonth;
             const currentMonthlyTotal = userMonthlyCalories[uid] || 0;
             
+            // Pontuação baseada no progresso mensal (XP)
             let score = 0;
             if (monthlyGoal > 0) {
                 score = Math.round((currentMonthlyTotal / monthlyGoal) * 1000);
@@ -341,29 +344,30 @@ const DashboardContent: React.FC = () => {
     );
   }, [meals]);
 
-  const monthlyGoals = useMemo(() => {
+  // Metas Diárias Dinâmicas
+  const dailyGoals = useMemo(() => {
       const calsDay = user.goalCalories || 2000;
       const protDay = user.goalProtein || 150;
       
-      const daysInMonth = getDaysInMonth(activePeriod[0], activePeriod[1]);
+      // Cálculo aproximado de Macros Saudáveis (Diário)
+      // Proteína Fixa (definida pelo usuário)
+      // Gordura: ~30% das calorias totais (1g = 9kcal)
+      // Carbo: O restante das calorias (1g = 4kcal)
       
-      const totalCals = calsDay * daysInMonth;
-      const totalProt = protDay * daysInMonth;
-      
-      const proteinCals = totalProt * 4;
-      const fatCals = totalCals * 0.30;
+      const proteinCals = protDay * 4;
+      const fatCals = calsDay * 0.30;
       const fatGrams = Math.round(fatCals / 9);
       
-      const remainingCals = totalCals - proteinCals - fatCals;
+      const remainingCals = calsDay - proteinCals - fatCals;
       const carbGrams = Math.max(0, Math.round(remainingCals / 4));
 
       return {
-          calories: totalCals,
-          protein: totalProt,
+          calories: calsDay,
+          protein: protDay,
           carbs: carbGrams,
           fats: fatGrams
       };
-  }, [user.goalCalories, user.goalProtein, activePeriod]);
+  }, [user.goalCalories, user.goalProtein]);
 
   const handleSaveProfile = async (updatedUser: UserProfile) => {
     setUser(updatedUser);
@@ -386,6 +390,7 @@ const DashboardContent: React.FC = () => {
             .eq('User_ID', currentUserId);
 
         if (error) {
+            // Fallback: Tenta salvar sem a foto se falhar (provavelmente tamanho payload)
             const { error: retryError } = await supabase
                 .from('NutriBot_User')
                 .update({
@@ -398,8 +403,8 @@ const DashboardContent: React.FC = () => {
                 })
                 .eq('User_ID', currentUserId);
 
-            if (retryError) alert("Erro ao salvar.");
-            else alert("Perfil salvo (sem foto).");
+            if (retryError) alert("Erro ao salvar alterações no banco de dados. Verifique sua conexão.");
+            else alert("Perfil atualizado! Porém, a foto era muito pesada e não foi salva. Tente uma menor.");
         }
     } catch (err) {
         console.error(err);
@@ -421,7 +426,7 @@ const DashboardContent: React.FC = () => {
           <Lock size={40} />
         </div>
         <h1 className="text-3xl font-bold text-slate-800 mb-3">Acesso Restrito</h1>
-        <p>Use o link do Telegram.</p>
+        <p className="text-slate-600 mb-6">Você precisa acessar através do link enviado pelo Telegram.</p>
       </div>
     );
   }
@@ -430,7 +435,7 @@ const DashboardContent: React.FC = () => {
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
       <Header 
         user={user} 
-        remainingCalories={Math.max(0, monthlyGoals.calories - totals.calories)} 
+        remainingCalories={Math.max(0, dailyGoals.calories - totals.calories)} 
         onMenuClick={() => setIsMobileMenuOpen(true)}
       />
 
@@ -446,9 +451,9 @@ const DashboardContent: React.FC = () => {
             <div className="space-y-6">
                 <section>
                 <div className="flex justify-between items-end mb-4">
-                    <h2 className="text-xl font-bold text-slate-800">Metas Mensais</h2>
+                    <h2 className="text-xl font-bold text-slate-800">Metas Diárias</h2>
                     <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-100 uppercase">
-                        Mês: {displayDate}
+                        Dia: {displayDate}
                     </span>
                 </div>
                 
@@ -457,7 +462,7 @@ const DashboardContent: React.FC = () => {
                     data={{
                         name: 'Calorias',
                         current: totals.calories,
-                        target: monthlyGoals.calories,
+                        target: dailyGoals.calories,
                         unit: 'kcal',
                         color: '#10b981', 
                     }}
@@ -467,7 +472,7 @@ const DashboardContent: React.FC = () => {
                     data={{
                         name: 'Proteínas',
                         current: totals.protein,
-                        target: monthlyGoals.protein,
+                        target: dailyGoals.protein,
                         unit: 'g',
                         color: '#84cc16', 
                     }}
@@ -477,7 +482,7 @@ const DashboardContent: React.FC = () => {
                     data={{
                         name: 'Carboidratos',
                         current: totals.carbs,
-                        target: monthlyGoals.carbs, 
+                        target: dailyGoals.carbs, 
                         unit: 'g',
                         color: '#f59e0b', 
                     }}
@@ -487,7 +492,7 @@ const DashboardContent: React.FC = () => {
                     data={{
                         name: 'Gorduras',
                         current: totals.fats,
-                        target: monthlyGoals.fats, 
+                        target: dailyGoals.fats, 
                         unit: 'g',
                         color: '#f43f5e', 
                     }}
