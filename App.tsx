@@ -14,7 +14,6 @@ import {
   Send,
   Bell
 } from 'lucide-react';
-// @ts-ignore
 import { GoogleGenAI, Type } from "@google/genai";
 import { UserContext, PracticeCycle, AIContent } from './types';
 
@@ -101,8 +100,9 @@ const App: React.FC = () => {
         }
       });
       
-      if (response.text) {
-        setAiContent(JSON.parse(response.text));
+      const text = response.text;
+      if (text) {
+        setAiContent(JSON.parse(text));
       }
     } catch (e) {
       console.error("Erro AI:", e);
