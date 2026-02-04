@@ -1,12 +1,9 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Zap, 
-  Settings, 
   Plus, 
-  Smartphone, 
   Watch, 
-  CheckCircle2, 
   Sparkles, 
   Volume2, 
   ChevronRight,
@@ -17,8 +14,9 @@ import {
   Send,
   Bell
 } from 'lucide-react';
+// @ts-ignore
 import { GoogleGenAI, Type } from "@google/genai";
-import { UserContext, PracticeCycle, AIContent, WordEntry } from './types';
+import { UserContext, PracticeCycle, AIContent } from './types';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
