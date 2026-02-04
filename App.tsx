@@ -1,562 +1,429 @@
 
-import React, { useMemo, useState, useEffect, type ReactNode, type ErrorInfo } from 'react';
-import Header from './components/Header';
-import Sidebar from './components/Sidebar';
-import MacroCard from './components/MacroCard';
-import MealTable from './components/MealTable';
-import Leaderboard from './components/Leaderboard';
-import PricingTable from './components/PricingTable';
-import EditProfileModal from './components/EditProfileModal';
-import ChatWidget from './components/ChatWidget';
-import { CURRENT_USER } from './constants';
-import { Flame, Beef, Wheat, Droplet, Loader2, Lock, X } from 'lucide-react';
-import { UserProfile, MealLog, LeaderboardEntry } from './types';
-import { supabase } from './lib/supabase';
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  Zap, 
+  Settings, 
+  Plus, 
+  Smartphone, 
+  Watch, 
+  CheckCircle2, 
+  Sparkles, 
+  Volume2, 
+  ChevronRight,
+  Plane,
+  Briefcase,
+  Target,
+  BookOpen,
+  Send,
+  Bell
+} from 'lucide-react';
+import { GoogleGenAI, Type } from "@google/genai";
+import { UserContext, PracticeCycle, AIContent, WordEntry } from './types';
 
-// Helper para pegar valor de objeto ignorando Case Sensitivity (Maiúsculo/Minúsculo)
-const getValue = (obj: any, key: string) => {
-  if (!obj) return undefined;
-  if (obj[key] !== undefined) return obj[key];
-  
-  const lowerKey = key.toLowerCase();
-  const foundKey = Object.keys(obj).find(k => k.toLowerCase() === lowerKey);
-  return foundKey ? obj[foundKey] : undefined;
-};
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
-// Helper para converter payload do banco em objeto MealLog da UI
-const convertToMealLog = (m: any): MealLog => {
-  const nomeDB = getValue(m, 'Nome');
-  let descDB = getValue(m, 'Descrição_da_refeição') || getValue(m, 'Descricao_da_refeicao'); 
-  
-  // Lógica para limpar JSON cru que vem da automação
-  if (descDB && typeof descDB === 'string') {
-    let cleanDesc = descDB.replace(/```json/g, '').replace(/```/g, '').trim();
-    if (cleanDesc.startsWith('{') || cleanDesc.startsWith('[')) {
-        try {
-            const parsed = JSON.parse(cleanDesc);
-            if (parsed.components && Array.isArray(parsed.components)) {
-                cleanDesc = parsed.components.map((c: any) => c.name).join(', ');
-            } else if (Array.isArray(parsed)) {
-                cleanDesc = parsed.map((c: any) => c.name || c.item).join(', ');
-            }
-            descDB = cleanDesc;
-        } catch (e) {
-            if (cleanDesc.length > 100) descDB = "Refeição Detalhada";
-            else descDB = cleanDesc;
-        }
-    }
-  }
+const App: React.FC = () => {
+  const [user, setUser] = useState<UserContext | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [activeCycle, setActiveCycle] = useState<PracticeCycle | null>(null);
+  const [aiContent, setAiContent] = useState<AIContent | null>(null);
+  const [loadingAI, setLoadingAI] = useState(false);
 
-  const nomeFinal = (nomeDB && nomeDB !== 'EMPTY') ? nomeDB : (descDB || 'Refeição Sem Nome');
-  
-  const dataStr = getValue(m, 'Data') || '';
-  let timeStr = 'Recente';
-  
-  // Formata a data para mostrar Dia/Mês e Hora
-  try {
-      const d = new Date(dataStr);
-      if (!isNaN(d.getTime())) {
-          const day = String(d.getDate()).padStart(2, '0');
-          const month = String(d.getMonth() + 1).padStart(2, '0');
-          const hours = String(d.getHours()).padStart(2, '0');
-          const minutes = String(d.getMinutes()).padStart(2, '0');
-          // Ex: 22/11 - 14:30
-          timeStr = `${day}/${month} - ${hours}:${minutes}`;
-      } else {
-          timeStr = dataStr;
-      }
-  } catch (e) {
-      timeStr = dataStr;
-  }
-
-  return {
-    id: (getValue(m, 'id') || Math.random()).toString(),
-    time: timeStr, 
-    name: nomeFinal,
-    calories: Number(getValue(m, 'Calorias')) || 0,
-    protein: Number(getValue(m, 'Proteinas')) || 0,
-    carbs: Number(getValue(m, 'Carboidratos')) || 0,
-    fats: Number(getValue(m, 'Gorduras')) || 0
-  };
-};
-
-// Helper para pegar quantos dias tem no mês
-const getDaysInMonth = (year: number, month: number) => {
-  return new Date(year, month, 0).getDate();
-};
-
-interface ErrorBoundaryProps {
-  children: ReactNode;
-}
-
-interface ErrorBoundaryState {
-  hasError: boolean;
-  error: Error | null;
-}
-
-class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  state: ErrorBoundaryState = { hasError: false, error: null };
-
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
-    return { hasError: true, error };
-  }
-
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error("Uncaught error:", error, errorInfo);
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="min-h-screen flex items-center justify-center bg-red-50 p-4 font-sans">
-          <div className="bg-white p-8 rounded-2xl shadow-xl max-w-lg text-center border border-red-100">
-            <h1 className="text-2xl font-bold text-slate-800 mb-2">Ops! Algo deu errado.</h1>
-            <p className="text-slate-600 mb-6">Ocorreu um erro inesperado na aplicação.</p>
-            <button 
-              onClick={() => window.location.reload()} 
-              className="bg-emerald-600 text-white px-6 py-3 rounded-xl hover:bg-emerald-700 font-bold transition-colors w-full"
-            >
-              Recarregar Página
-            </button>
-          </div>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
-const DashboardContent: React.FC = () => {
-  const [accessStatus, setAccessStatus] = useState<'loading' | 'granted' | 'denied' | 'no_id'>('loading');
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  
-  const [user, setUser] = useState<UserProfile>(CURRENT_USER);
-  const [meals, setMeals] = useState<MealLog[]>([]);
-  
-  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
-  const [isLeaderboardLoading, setIsLeaderboardLoading] = useState(true);
-  
-  const [displayDate, setDisplayDate] = useState<string>("");
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-
+  // Carregar dados iniciais
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const urlIdStr = params.get('id')?.trim();
-
-    if (!urlIdStr) {
-      setAccessStatus('no_id');
-      return;
+    const savedUser = localStorage.getItem('glance_user');
+    const savedCycle = localStorage.getItem('glance_active_cycle');
+    
+    if (savedUser) {
+      setUser(JSON.parse(savedUser));
+    } else {
+      setShowOnboarding(true);
     }
 
-    let parsedId: string | number = parseInt(urlIdStr);
-    if (isNaN(parsedId)) {
-        parsedId = urlIdStr; 
+    if (savedCycle) {
+      setActiveCycle(JSON.parse(savedCycle));
+    } else {
+      // Ciclo Default para Demo
+      const defaultCycle: PracticeCycle = {
+        id: 'c1',
+        title: 'Vocabulário de Negócios',
+        words: [
+          { term: 'Streamline', mastered: false },
+          { term: 'Bottleneck', mastered: false },
+          { term: 'Framework', mastered: false },
+          { term: 'Outcome', mastered: false },
+          { term: 'Stakeholder', mastered: false },
+        ],
+        currentDay: 3,
+        isActive: true,
+        startDate: new Date().toISOString(),
+      };
+      setActiveCycle(defaultCycle);
     }
-
-    console.log("Tentando acessar com ID:", parsedId);
-    setCurrentUserId(parsedId.toString());
-    fetchUserData(parsedId);
   }, []);
 
+  // Lógica de Geração de IA
   useEffect(() => {
-    if (!currentUserId || accessStatus !== 'granted') return;
-
-    const subscription = supabase
-      .channel('refeicoes-realtime')
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'Refeições_NutriBot',
-          filter: `User_ID=eq.${currentUserId}`
-        },
-        (payload) => {
-          const newMeal = convertToMealLog(payload.new);
-          setMeals(prevMeals => {
-            if (prevMeals.some(m => m.id === newMeal.id)) {
-                return prevMeals;
-            }
-            return [newMeal, ...prevMeals];
-          });
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(subscription);
-    };
-  }, [currentUserId, accessStatus]);
-
-  const fetchUserData = async (userId: string | number) => {
-    try {
-      setAccessStatus('loading');
-
-      // 1. Buscar Perfil
-      const { data: profileData } = await supabase
-        .from('NutriBot_User')
-        .select('*')
-        .eq('User_ID', userId)
-        .maybeSingle();
-
-      if (profileData) {
-        setUser(prev => ({
-          ...prev,
-          id: getValue(profileData, 'User_ID')?.toString(),
-          name: getValue(profileData, 'Nome') || prev.name,
-          age: getValue(profileData, 'Idade') || prev.age,
-          weight: getValue(profileData, 'Peso_kg') || prev.weight,
-          height: getValue(profileData, 'Altura_cm') || prev.height,
-          goalCalories: getValue(profileData, 'Calorias_alvo') || prev.goalCalories,
-          goalProtein: getValue(profileData, 'Proteína_alvo') || prev.goalProtein,
-          avatarUrl: getValue(profileData, 'Avatar_URL') || prev.avatarUrl 
-        }));
-      } else {
-        console.warn("Perfil não encontrado.");
-        setAccessStatus('denied');
-        return;
-      }
-
-      // 2. Buscar Refeições
-      const { data: mealsData } = await supabase
-        .from('Refeições_NutriBot')
-        .select('*')
-        .eq('User_ID', userId)
-        .order('Data', { ascending: false }) 
-        .limit(100);
-
-      let activeMeals: MealLog[] = [];
-      const today = new Date();
-      let targetDateStr = today.toISOString().split('T')[0]; // YYYY-MM-DD
-      
-      if (mealsData && mealsData.length > 0) {
-        // Pega a data da refeição mais recente para definir o dia ativo
-        const rawDate = getValue(mealsData[0], 'Data');
-        const mostRecentMealDate = typeof rawDate === 'string' ? rawDate.trim().split(' ')[0] : targetDateStr;
-        targetDateStr = mostRecentMealDate;
-      }
-      
-      // Formata para exibição (DD/MM/YYYY)
-      const [y, m, d] = targetDateStr.split('-');
-      setDisplayDate(`${d}/${m}/${y}`);
-
-      // Filtra refeições APENAS DO DIA ESPECÍFICO
-      if (mealsData) {
-        const filteredDBMeals = mealsData.filter((m: any) => {
-            const mDate = getValue(m, 'Data');
-            return mDate && mDate.toString().startsWith(targetDateStr);
-        });
-
-        activeMeals = filteredDBMeals.map((m: any) => convertToMealLog(m));
-      }
-
-      setMeals(activeMeals);
-      setAccessStatus('granted');
-
-      // 3. Busca Leaderboard MENSAL (Competição Acumulativa)
-      const targetMonthStr = targetDateStr.slice(0, 7); // YYYY-MM
-      const daysCount = getDaysInMonth(parseInt(y), parseInt(m));
-      fetchLeaderboard(userId, targetMonthStr, daysCount);
-
-    } catch (error) {
-      console.error("Erro no fetchUserData:", error);
-      setAccessStatus('denied');
+    if (activeCycle && user && (activeCycle.currentDay === 3 || activeCycle.currentDay === 4)) {
+      generateAIContent();
     }
-  };
+  }, [activeCycle?.currentDay, user]);
 
-  const fetchLeaderboard = async (currentUserId: string | number, monthFilter: string, daysInMonth: number) => {
+  const generateAIContent = async () => {
+    if (!user || !activeCycle) return;
+    setLoadingAI(true);
+    
+    const prompt = `
+      Aja como um tutor de inglês especializado.
+      Nível do Aluno: ${user.level}
+      Objetivo: ${user.goal} ${user.profession ? `(Profissão: ${user.profession})` : ''}
+      Palavras do Ciclo: ${activeCycle.words.map(w => w.term).join(', ')}
+      Dia do Ciclo: ${activeCycle.currentDay}
+
+      Instruções:
+      Se Dia 3: Gere 3 frases curtas (máximo 10 palavras cada) usando as palavras do ciclo.
+      Se Dia 4: Gere um parágrafo de 3 linhas conectando todas as palavras do ciclo em uma história.
+      Use vocabulário auxiliar simples.
+    `;
+
     try {
-        setIsLeaderboardLoading(true);
-        
-        const { data: allUsers } = await supabase
-            .from('NutriBot_User')
-            .select('User_ID, Nome, Calorias_alvo, Avatar_URL');
-        
-        const { data: allMeals } = await supabase
-            .from('Refeições_NutriBot')
-            .select('User_ID, Calorias, Data');
-
-        if (!allUsers || !allMeals) {
-            setLeaderboard([]);
-            return;
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              phrases: { type: Type.ARRAY, items: { type: Type.STRING } },
+              finalText: { type: Type.STRING },
+              contextNote: { type: Type.STRING }
+            }
+          }
         }
-
-        // Soma calorias do MÊS inteiro para o ranking
-        const userMonthlyCalories: Record<string, number> = {};
-
-        allMeals.forEach((meal: any) => {
-            const mDate = getValue(meal, 'Data');
-            if (mDate && mDate.toString().startsWith(monthFilter)) {
-                const uid = getValue(meal, 'User_ID');
-                const cals = Number(getValue(meal, 'Calorias')) || 0;
-                userMonthlyCalories[uid] = (userMonthlyCalories[uid] || 0) + cals;
-            }
-        });
-
-        const leaderboardData: LeaderboardEntry[] = allUsers.map((u: any) => {
-            const uid = getValue(u, 'User_ID');
-            const name = getValue(u, 'Nome') || 'Usuário';
-            const dailyGoal = Number(getValue(u, 'Calorias_alvo')) || 2000;
-            
-            const monthlyGoal = dailyGoal * daysInMonth;
-            const currentMonthlyTotal = userMonthlyCalories[uid] || 0;
-            
-            // Pontuação baseada no progresso mensal (XP)
-            let score = 0;
-            if (monthlyGoal > 0) {
-                score = Math.round((currentMonthlyTotal / monthlyGoal) * 1000);
-            }
-
-            return {
-                rank: 0, 
-                name: name,
-                score: score, 
-                isUser: uid.toString() === currentUserId.toString(),
-                avatarUrl: getValue(u, 'Avatar_URL') || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`
-            };
-        });
-
-        leaderboardData.sort((a, b) => b.score - a.score);
-        const rankedData = leaderboardData.map((entry, index) => ({
-            ...entry,
-            rank: index + 1
-        }));
-
-        setLeaderboard(rankedData);
-    } catch (error) {
-        console.error("Erro no Leaderboard:", error);
-        setLeaderboard([]);
+      });
+      
+      if (response.text) {
+        setAiContent(JSON.parse(response.text));
+      }
+    } catch (e) {
+      console.error("Erro AI:", e);
     } finally {
-        setIsLeaderboardLoading(false);
+      setLoadingAI(false);
     }
   };
 
-  const totals = useMemo(() => {
-    return meals.reduce(
-      (acc, meal) => ({
-        calories: acc.calories + meal.calories,
-        protein: acc.protein + meal.protein,
-        carbs: acc.carbs + meal.carbs,
-        fats: acc.fats + meal.fats,
-      }),
-      { calories: 0, protein: 0, carbs: 0, fats: 0 }
-    );
-  }, [meals]);
-
-  // Metas Diárias Dinâmicas
-  const dailyGoals = useMemo(() => {
-      const calsDay = user.goalCalories || 2000;
-      const protDay = user.goalProtein || 150;
-      
-      // Cálculo aproximado de Macros Saudáveis (Diário)
-      // Proteína Fixa (definida pelo usuário)
-      // Gordura: ~30% das calorias totais (1g = 9kcal)
-      // Carbo: O restante das calorias (1g = 4kcal)
-      
-      const proteinCals = protDay * 4;
-      const fatCals = calsDay * 0.30;
-      const fatGrams = Math.round(fatCals / 9);
-      
-      const remainingCals = calsDay - proteinCals - fatCals;
-      const carbGrams = Math.max(0, Math.round(remainingCals / 4));
-
-      return {
-          calories: calsDay,
-          protein: protDay,
-          carbs: carbGrams,
-          fats: fatGrams
-      };
-  }, [user.goalCalories, user.goalProtein]);
-
-  const handleSaveProfile = async (updatedUser: UserProfile) => {
-    setUser(updatedUser);
-    if (!currentUserId) return;
-
-    try {
-        const fullUpdateData = {
-            Nome: updatedUser.name,
-            Idade: updatedUser.age,
-            Peso_kg: updatedUser.weight,
-            Altura_cm: updatedUser.height,
-            Calorias_alvo: updatedUser.goalCalories,
-            "Proteína_alvo": updatedUser.goalProtein,
-            Avatar_URL: updatedUser.avatarUrl 
-        };
-
-        const { error } = await supabase
-            .from('NutriBot_User')
-            .update(fullUpdateData)
-            .eq('User_ID', currentUserId);
-
-        if (error) {
-            // Fallback: Tenta salvar sem a foto se falhar (provavelmente tamanho payload)
-            const { error: retryError } = await supabase
-                .from('NutriBot_User')
-                .update({
-                    Nome: updatedUser.name,
-                    Idade: updatedUser.age,
-                    Peso_kg: updatedUser.weight,
-                    Altura_cm: updatedUser.height,
-                    Calorias_alvo: updatedUser.goalCalories,
-                    "Proteína_alvo": updatedUser.goalProtein,
-                })
-                .eq('User_ID', currentUserId);
-
-            if (retryError) alert("Erro ao salvar alterações no banco de dados. Verifique sua conexão.");
-            else alert("Perfil atualizado! Porém, a foto era muito pesada e não foi salva. Tente uma menor.");
-        }
-    } catch (err) {
-        console.error(err);
-    }
+  const handleFinishOnboarding = (data: UserContext) => {
+    setUser(data);
+    localStorage.setItem('glance_user', JSON.stringify(data));
+    setShowOnboarding(false);
   };
 
-  if (accessStatus === 'loading') {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 gap-4">
-        <Loader2 className="w-12 h-12 text-emerald-500 animate-spin" />
-      </div>
-    );
-  }
-
-  if (accessStatus === 'no_id' || accessStatus === 'denied') {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-6 text-center">
-        <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-6 text-slate-400">
-          <Lock size={40} />
-        </div>
-        <h1 className="text-3xl font-bold text-slate-800 mb-3">Acesso Restrito</h1>
-        <p className="text-slate-600 mb-6">Você precisa acessar através do link enviado pelo Telegram.</p>
-      </div>
-    );
-  }
+  if (showOnboarding) return <Onboarding onFinish={handleFinishOnboarding} />;
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-      <Header 
-        user={user} 
-        remainingCalories={Math.max(0, dailyGoals.calories - totals.calories)} 
-        onMenuClick={() => setIsMobileMenuOpen(true)}
-      />
+    <div className="min-h-screen bg-[#0f172a] text-slate-100 font-sans selection:bg-indigo-500/30">
+      {/* Header Estilizado */}
+      <header className="max-w-6xl mx-auto px-6 py-8 flex justify-between items-center">
+        <div className="flex items-center gap-3">
+          <div className="bg-indigo-600 p-2 rounded-xl neon-shadow animate-pulse">
+            <Zap size={24} className="fill-white text-white" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-black tracking-tighter text-white">GLANCE</h1>
+            <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Active Learning</p>
+          </div>
+        </div>
+        
+        <div className="flex items-center gap-4 bg-slate-800/50 p-1.5 rounded-full border border-slate-700">
+          <div className="px-4 hidden sm:block">
+            <p className="text-xs font-bold text-white leading-none">{user?.name || 'User'}</p>
+            <p className="text-[10px] text-slate-400 uppercase tracking-tighter mt-1">{user?.level}</p>
+          </div>
+          <img src={user?.avatarUrl} className="w-10 h-10 rounded-full object-cover border-2 border-slate-700" alt="Profile" />
+        </div>
+      </header>
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-3 hidden lg:block">
-            <div className="sticky top-24 h-[calc(100vh-8rem)]">
-              <Sidebar user={user} onEdit={() => setIsEditModalOpen(true)} />
+      <main className="max-w-6xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-12 gap-8 pb-20">
+        
+        {/* Coluna Central: Ciclo e Vocabulário */}
+        <div className="lg:col-span-7 space-y-8">
+          
+          {/* Card do Ciclo Ativo */}
+          <section className="glass rounded-[2.5rem] p-8 border border-white/5 relative overflow-hidden group">
+            <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity">
+              <Sparkles size={160} />
+            </div>
+
+            <div className="flex justify-between items-start mb-8">
+              <div>
+                <span className="px-3 py-1 bg-indigo-500/10 text-indigo-400 text-[10px] font-black uppercase tracking-widest rounded-full border border-indigo-500/20">
+                  Dia {activeCycle?.currentDay} de 4
+                </span>
+                <h2 className="text-3xl font-bold mt-3 text-white">
+                  {activeCycle?.title}
+                </h2>
+                <p className="text-slate-400 text-sm mt-1">Sua jornada de prática ativa de hoje.</p>
+              </div>
+              <div className="text-right">
+                <div className="text-4xl font-black text-indigo-500">{Math.round((activeCycle?.currentDay || 0) * 25)}%</div>
+                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Concluído</div>
+              </div>
+            </div>
+
+            {/* Grid de Palavras */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {activeCycle?.words.map((word, idx) => (
+                <div key={idx} className="bg-slate-900/50 border border-slate-800 p-4 rounded-2xl flex items-center justify-between group/word hover:border-indigo-500/50 transition-all cursor-default">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-2 h-2 rounded-full ${idx < (activeCycle.currentDay * 1.5) ? 'bg-lime-400' : 'bg-slate-700'}`} />
+                    <span className="font-semibold text-slate-200">{word.term}</span>
+                  </div>
+                  <button className="p-2 text-slate-500 hover:text-white transition-colors">
+                    <Volume2 size={16} />
+                  </button>
+                </div>
+              ))}
+              <button className="border-2 border-dashed border-slate-800 rounded-2xl p-4 flex items-center justify-center gap-2 text-slate-500 hover:text-indigo-400 hover:border-indigo-500/50 transition-all">
+                <Plus size={20} />
+                <span className="text-sm font-bold uppercase tracking-wider">Add Word</span>
+              </button>
+            </div>
+
+            {/* Timeline do Ciclo */}
+            <div className="mt-10 flex gap-2">
+              {[1, 2, 3, 4].map((d) => (
+                <div key={d} className="flex-1 space-y-2">
+                  <div className={`h-1.5 rounded-full transition-all duration-700 ${d <= (activeCycle?.currentDay || 0) ? 'bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.5)]' : 'bg-slate-800'}`} />
+                  <p className={`text-[9px] font-black text-center uppercase tracking-tighter ${d === activeCycle?.currentDay ? 'text-indigo-400' : 'text-slate-600'}`}>
+                    {d < 3 ? 'Words' : d === 3 ? 'Phrases' : 'Story'}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {/* Widgets de Progresso */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            <div className="glass rounded-[2rem] p-6 border border-white/5">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 bg-lime-500/10 rounded-xl text-lime-400"><Target size={20} /></div>
+                <h3 className="font-bold text-white">Objetivo Semanal</h3>
+              </div>
+              <div className="flex items-end justify-between">
+                <div>
+                  <p className="text-3xl font-black text-white">12/20</p>
+                  <p className="text-xs text-slate-400 font-medium uppercase tracking-widest mt-1">Palavras Dominadas</p>
+                </div>
+                <div className="w-16 h-16 rounded-full border-4 border-slate-800 border-t-lime-400 flex items-center justify-center font-black text-xs">60%</div>
+              </div>
+            </div>
+
+            <div className="glass rounded-[2rem] p-6 border border-white/5">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 bg-indigo-500/10 rounded-xl text-indigo-400"><Send size={20} /></div>
+                <h3 className="font-bold text-white">Interações Hoje</h3>
+              </div>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Você interagiu com <span className="text-white font-bold">8 notificações</span> hoje. Excelente ritmo para memorização de longo prazo!
+              </p>
             </div>
           </div>
+        </div>
 
-          <div className="lg:col-span-9 space-y-12">
-            <div className="space-y-6">
-                <section>
-                <div className="flex justify-between items-end mb-4">
-                    <h2 className="text-xl font-bold text-slate-800">Metas Diárias</h2>
-                    <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-md border border-emerald-100 uppercase">
-                        Dia: {displayDate}
-                    </span>
-                </div>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-                    <MacroCard
-                    data={{
-                        name: 'Calorias',
-                        current: totals.calories,
-                        target: dailyGoals.calories,
-                        unit: 'kcal',
-                        color: '#10b981', 
-                    }}
-                    icon={<Flame size={20} className="text-emerald-500" />}
-                    />
-                    <MacroCard
-                    data={{
-                        name: 'Proteínas',
-                        current: totals.protein,
-                        target: dailyGoals.protein,
-                        unit: 'g',
-                        color: '#84cc16', 
-                    }}
-                    icon={<Beef size={20} className="text-lime-600" />}
-                    />
-                    <MacroCard
-                    data={{
-                        name: 'Carboidratos',
-                        current: totals.carbs,
-                        target: dailyGoals.carbs, 
-                        unit: 'g',
-                        color: '#f59e0b', 
-                    }}
-                    icon={<Wheat size={20} className="text-amber-500" />}
-                    />
-                    <MacroCard
-                    data={{
-                        name: 'Gorduras',
-                        current: totals.fats,
-                        target: dailyGoals.fats, 
-                        unit: 'g',
-                        color: '#f43f5e', 
-                    }}
-                    icon={<Droplet size={20} className="text-rose-500" />}
-                    />
-                </div>
-                </section>
-
-                <section className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-                <div className="xl:col-span-2 h-full">
-                    <MealTable meals={meals} />
-                </div>
-                <div className="xl:col-span-1 h-full">
-                    <Leaderboard entries={leaderboard} isLoading={isLeaderboardLoading} />
-                </div>
-                </section>
+        {/* Coluna Direita: Simulador de Notificações */}
+        <div className="lg:col-span-5">
+          <div className="sticky top-8 space-y-8">
+            
+            <div className="px-2 flex items-center justify-between">
+              <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Interface Principal</h3>
+              <div className="flex gap-2">
+                <div className="w-2 h-2 rounded-full bg-indigo-500 animate-ping" />
+                <span className="text-[10px] font-bold text-indigo-400">LIVE PREVIEW</span>
+              </div>
             </div>
-            <div className="pt-8 border-t border-slate-200">
-                <PricingTable />
+
+            {/* Simulador Smartphone */}
+            <div className="relative mx-auto w-full max-w-[300px] aspect-[9/19.5] bg-slate-950 rounded-[3rem] border-[8px] border-slate-900 shadow-2xl overflow-hidden ring-4 ring-slate-900/30">
+              {/* Notch */}
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-28 h-6 bg-slate-900 rounded-b-2xl z-20" />
+              
+              {/* Wallpaper */}
+              <div className="absolute inset-0 bg-gradient-to-b from-indigo-950 via-slate-950 to-slate-950 opacity-60" />
+
+              {/* Lockscreen Content */}
+              <div className="relative z-10 pt-20 px-4">
+                <div className="text-center mb-16">
+                  <h4 className="text-6xl font-thin text-white tracking-tighter">09:41</h4>
+                  <p className="text-xs text-indigo-200/50 font-medium mt-2">Monday, Oct 24</p>
+                </div>
+
+                {/* A Notificação do Glance */}
+                <div className="glass rounded-3xl p-4 shadow-2xl border-white/10 animate-float">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="bg-indigo-600 p-1 rounded-lg"><Zap size={10} className="text-white" /></div>
+                      <span className="text-[10px] font-black text-slate-300 uppercase tracking-tighter">GLANCE • AGORA</span>
+                    </div>
+                    <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                  </div>
+
+                  {activeCycle?.currentDay === 3 ? (
+                    <div className="space-y-3">
+                      <p className="text-sm font-semibold text-white leading-snug">
+                        {loadingAI ? 'Creating your practice...' : aiContent?.phrases?.[0] || 'Pratique esta frase de trabalho...'}
+                      </p>
+                      <div className="flex gap-2">
+                        <button className="flex-1 py-2 bg-indigo-600 rounded-xl text-[10px] font-black uppercase tracking-widest text-white hover:bg-indigo-500 transition-colors">
+                          Tradução
+                        </button>
+                        <button className="w-10 h-10 flex items-center justify-center bg-white/10 rounded-xl hover:bg-white/20 transition-colors">
+                          <Volume2 size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-4">
+                      <h5 className="text-3xl font-black text-white tracking-tight">{activeCycle?.words[0].term}</h5>
+                      <p className="text-[10px] text-indigo-400 font-bold uppercase tracking-widest mt-2">Tente dizer agora</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Outra Notificação */}
+                <div className="glass rounded-2xl p-3 opacity-40 mt-3 flex items-center gap-3">
+                   <div className="w-8 h-8 rounded-lg bg-slate-800" />
+                   <div className="flex-1 space-y-1">
+                      <div className="h-2 w-16 bg-slate-700 rounded" />
+                      <div className="h-2 w-24 bg-slate-700 rounded" />
+                   </div>
+                </div>
+              </div>
+
+              {/* Home Bar */}
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 w-32 h-1 bg-white/20 rounded-full" />
+            </div>
+
+            {/* Watch Simulator */}
+            <div className="flex justify-center pt-4">
+              <div className="w-40 h-48 bg-slate-900 rounded-[2.5rem] border-[6px] border-slate-800 shadow-xl p-4 flex flex-col items-center justify-center text-center relative overflow-hidden group">
+                <div className="absolute inset-0 bg-indigo-600/5 group-hover:bg-indigo-600/10 transition-colors" />
+                <Watch className="text-indigo-500 mb-2" size={24} />
+                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Glance</p>
+                <p className="text-sm font-bold text-white leading-tight">
+                  {activeCycle?.words[0].term}
+                </p>
+                <div className="mt-4 flex gap-1">
+                  <div className="w-1 h-1 rounded-full bg-indigo-500" />
+                  <div className="w-1 h-1 rounded-full bg-indigo-500" />
+                  <div className="w-1 h-1 rounded-full bg-slate-700" />
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </main>
-
-      <ChatWidget userId={currentUserId} />
-
-      <EditProfileModal 
-        isOpen={isEditModalOpen} 
-        onClose={() => setIsEditModalOpen(false)} 
-        user={user} 
-        onSave={handleSaveProfile} 
-      />
-
-      {isMobileMenuOpen && (
-        <div className="fixed inset-0 z-50 lg:hidden">
-          <div 
-            className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm"
-            onClick={() => setIsMobileMenuOpen(false)}
-          ></div>
-          <div className="absolute top-0 left-0 bottom-0 w-80 bg-white shadow-xl transform transition-transform duration-300 ease-in-out">
-             <div className="h-full overflow-y-auto">
-                <Sidebar user={user} onEdit={() => {
-                    setIsMobileMenuOpen(false);
-                    setIsEditModalOpen(true);
-                }} />
-             </div>
-             <button 
-                onClick={() => setIsMobileMenuOpen(false)}
-                className="absolute top-4 right-4 p-2 bg-white/80 rounded-full shadow-sm text-slate-500 hover:text-slate-800"
-             >
-                <X size={20} />
-             </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
 
-const App: React.FC = () => {
+// Componente de Onboarding
+const Onboarding: React.FC<{ onFinish: (data: UserContext) => void }> = ({ onFinish }) => {
+  const [step, setStep] = useState(1);
+  const [form, setForm] = useState<Partial<UserContext>>({
+    level: 'basic',
+    goal: 'general',
+    avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${Math.random()}`
+  });
+
+  const next = () => setStep(s => s + 1);
+
   return (
-    <ErrorBoundary>
-      <DashboardContent />
-    </ErrorBoundary>
+    <div className="fixed inset-0 z-50 bg-[#0f172a] flex items-center justify-center p-6">
+      <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-[3rem] p-10 shadow-2xl relative overflow-hidden">
+        <div className="absolute -top-24 -left-24 w-64 h-64 bg-indigo-600/20 rounded-full blur-[100px]" />
+        
+        {step === 1 && (
+          <div className="space-y-8 relative z-10">
+            <div className="bg-indigo-600 w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
+              <Zap className="text-white fill-white" />
+            </div>
+            <h2 className="text-4xl font-black tracking-tight text-white leading-none">Bem-vindo ao GLANCE.</h2>
+            <p className="text-slate-400 font-medium">Pratique inglês de forma passiva, onde você estiver, sem precisar abrir o app.</p>
+            <div className="space-y-4">
+              <input 
+                placeholder="Seu nome"
+                className="w-full bg-slate-800 border border-slate-700 p-5 rounded-2xl text-white outline-none focus:border-indigo-500 transition-all font-bold"
+                onChange={e => setForm({...form, name: e.target.value})}
+              />
+              <button 
+                onClick={next}
+                disabled={!form.name}
+                className="w-full bg-indigo-600 py-5 rounded-2xl font-black text-white hover:bg-indigo-500 transition-all shadow-xl shadow-indigo-500/20 disabled:opacity-50"
+              >
+                VAMOS LÁ
+              </button>
+            </div>
+          </div>
+        )}
+
+        {step === 2 && (
+          <div className="space-y-8 relative z-10">
+            <h2 className="text-3xl font-black tracking-tight text-white leading-none">Qual seu nível atual?</h2>
+            <div className="grid grid-cols-1 gap-3">
+              {['beginner', 'basic', 'intermediate', 'advanced'].map(l => (
+                <button 
+                  key={l}
+                  onClick={() => { setForm({...form, level: l as any}); next(); }}
+                  className="w-full p-5 bg-slate-800 border border-slate-700 rounded-2xl text-left hover:border-indigo-500 hover:bg-indigo-500/5 transition-all flex items-center justify-between group"
+                >
+                  <span className="font-bold text-slate-300 capitalize group-hover:text-white">{l}</span>
+                  <ChevronRight size={18} className="text-slate-600 group-hover:text-indigo-400" />
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {step === 3 && (
+          <div className="space-y-8 relative z-10">
+            <h2 className="text-3xl font-black tracking-tight text-white leading-none">Seu foco principal?</h2>
+            <div className="grid grid-cols-2 gap-4">
+              {[
+                { id: 'work', label: 'Carreira', icon: Briefcase },
+                { id: 'travel', label: 'Viagem', icon: Plane },
+                { id: 'study', label: 'Estudos', icon: BookOpen },
+                { id: 'general', label: 'Geral', icon: Target },
+              ].map(g => (
+                <button 
+                  key={g.id}
+                  onClick={() => { setForm({...form, goal: g.id as any}); next(); }}
+                  className="p-6 bg-slate-800 border border-slate-700 rounded-[2rem] hover:border-indigo-500 hover:bg-indigo-500/5 transition-all text-center space-y-3 group"
+                >
+                  <div className="mx-auto w-10 h-10 rounded-xl bg-slate-700 group-hover:bg-indigo-500/20 flex items-center justify-center transition-colors">
+                    <g.icon className="text-slate-400 group-hover:text-indigo-400" size={24} />
+                  </div>
+                  <span className="font-bold text-slate-300 block text-xs uppercase tracking-widest">{g.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {step === 4 && (
+          <div className="space-y-8 relative z-10">
+            <h2 className="text-3xl font-black tracking-tight text-white leading-none">Tudo pronto!</h2>
+            <p className="text-slate-400 font-medium">A partir de agora, o GLANCE enviará pequenas doses de inglês para sua barra de notificações.</p>
+            <button 
+              onClick={() => onFinish(form as UserContext)}
+              className="w-full bg-lime-400 py-5 rounded-2xl font-black text-slate-900 hover:bg-lime-300 transition-all shadow-xl shadow-lime-400/20 flex items-center justify-center gap-3"
+            >
+              ATIVAR NOTIFICAÇÕES <Bell size={20} />
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
   );
 };
 
