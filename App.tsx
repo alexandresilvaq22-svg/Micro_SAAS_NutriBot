@@ -2,11 +2,9 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Zap, 
-  Plus, 
   Watch, 
   Sparkles, 
   Volume2, 
-  ChevronRight,
   Plane,
   Briefcase,
   Target,
@@ -51,15 +49,17 @@ const App: React.FC = () => {
   }, []);
 
   const generateAIContent = async () => {
+    // Ensuring requirements are met before initiating AI generation
     if (!user || !activeCycle || !process.env.API_KEY) return;
     setLoadingAI(true);
     
+    // Creating GoogleGenAI instance directly with process.env.API_KEY before use
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const prompt = `
       Nível: ${user.level}, Objetivo: ${user.goal}. 
       Palavras: ${activeCycle.words.map(w => w.term).join(', ')}.
       Dia: ${activeCycle.currentDay}.
-      Se Dia 3: 3 frases curtas. Se Dia 4: 1 parágrafo.
+      Se Dia 3: 3 frases curtas de exemplo. Se Dia 4: 1 parágrafo curto.
     `;
 
     try {
@@ -78,8 +78,9 @@ const App: React.FC = () => {
         }
       });
       
+      // Accessing response text using the .text property as per guidelines
       if (result.text) {
-        setAiContent(JSON.parse(result.text));
+        setAiContent(JSON.parse(result.text.trim()));
       }
     } catch (e) {
       console.error("AI Error:", e);
@@ -189,6 +190,7 @@ const App: React.FC = () => {
 
         <div className="lg:col-span-5">
           <div className="sticky top-8 space-y-6">
+            {/* Phone Simulator */}
             <div className="relative mx-auto w-full max-w-[280px] aspect-[9/19.5] bg-slate-950 rounded-[3rem] border-[8px] border-slate-900 shadow-2xl overflow-hidden">
               <div className="absolute top-0 left-1/2 -translate-x-1/2 w-24 h-6 bg-slate-900 rounded-b-2xl z-20" />
               <div className="absolute inset-0 bg-gradient-to-b from-indigo-950/20 to-slate-950" />

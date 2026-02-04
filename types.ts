@@ -30,7 +30,7 @@ export interface AIContent {
   contextNote?: string;
 }
 
-// Fixed missing types for nutrition and community features
+// Added missing interfaces for NutriBot components to fix compilation errors
 
 export interface UserProfile {
   id: string;
@@ -41,6 +41,14 @@ export interface UserProfile {
   goalCalories: number;
   goalProtein: number;
   avatarUrl: string;
+}
+
+export interface MacroData {
+  name: string;
+  target: number;
+  current: number;
+  color: string;
+  unit: string;
 }
 
 export interface MealLog {
@@ -59,12 +67,4 @@ export interface LeaderboardEntry {
   score: number;
   avatarUrl: string;
   isUser?: boolean;
-}
-
-export interface MacroData {
-  name: string;
-  target: number;
-  current: number;
-  unit: string;
-  color: string;
 }
